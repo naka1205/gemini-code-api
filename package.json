@@ -1,0 +1,32 @@
+{
+  "name": "gemini-code-api",
+  "version": "1.0.0",
+  "description": "Gemini API proxy service compatible with OpenAI and Claude APIs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate:sqlite",
+    "db:migrate": "wrangler d1 migrations apply gemini-code --remote",
+    "db:migrate:local": "wrangler d1 migrations apply gemini-code --local"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.4.3",
+    "drizzle-orm": "^0.29.3",
+    "hono": "^3.12.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "@types/node": "^20.11.10",
+    "drizzle-kit": "^0.20.13",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0",
+    "vitest-environment-miniflare": "^2.14.4",
+    "wrangler": "^4.0.0"
+  }
+}
