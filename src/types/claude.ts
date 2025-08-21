@@ -7,6 +7,12 @@ export interface ClaudeConfig {
   timeout?: number;
 }
 
+// 思考配置
+export interface ThinkingConfig {
+  type?: 'enabled' | 'disabled';
+  budget_tokens?: number;
+}
+
 // 内容块类型
 export interface ContentBlock {
   type: 'text' | 'image' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
@@ -62,6 +68,7 @@ export interface ClaudeRequest {
   stream?: boolean;
   tools?: ClaudeTool[];
   tool_choice?: ToolChoice;
+  thinking?: ThinkingConfig;
 }
 
 // Claude响应使用情况

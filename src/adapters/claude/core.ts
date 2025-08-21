@@ -42,6 +42,72 @@ export class ClaudeCore {
     });
   }
 
+  // JSON序列化
+  protected json(obj: unknown): string {
+    return JSON.stringify(obj);
+  }
+
+  // 基础响应头
+  protected baseHeaders(): Record<string, string> {
+    return {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, anthropic-version',
+    };
+  }
+
+  // JSON响应头
+  protected jsonHeaders(): Record<string, string> {
+    return {
+      ...this.baseHeaders(),
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01'
+    };
+  }
+
+  // SSE响应头
+  protected sseHeaders(): Record<string, string> {
+    return {
+      ...this.baseHeaders(),
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'anthropic-version': '2023-06-01'
+    };
+  }
+
+  // 获取请求ID
+  protected getRequestId(): string {
+    return `req_${this.generateUUID()}`;
+  }
+
+  // 安全提取Gemini错误
+  protected safeExtractGeminiError(txt: string): string | null {
+    try {
+      const obj = JSON.parse(txt);
+      return obj?.error?.message || null;
+    } catch {
+      return txt || null;
+    }
+  }
+
+  // Anthropic错误格式
+  protected anthropicError(status: number, message: string, type?: string): any {
+    let t = type;
+    if (!t) {
+      switch (status) {
+        case 400: t = 'invalid_request_error'; break;
+        case 401: t = 'authentication_error'; break;
+        case 403: t = 'permission_error'; break;
+        case 404: t = 'not_found_error'; break;
+        case 429: t = 'rate_limit_error'; break;
+        default: t = status >= 500 ? 'api_error' : 'invalid_request_error';
+      }
+    }
+    return { type: 'error', error: { type: t, message } };
+  }
+
   // 创建请求头
   protected makeHeaders(apiKey?: string, more?: Record<string, string>): Record<string, string> {
     return {
@@ -70,9 +136,10 @@ export class ClaudeCore {
   // 模型映射：Claude -> Gemini
   protected getModelMap(): Record<string, string> {
     return {
+      'claude-3-5-haiku-20241022': 'gemini-2.5-flash',
       'claude-3-5-sonnet-20241022': 'gemini-2.5-flash',
       'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
-      'claude-sonnet-4-20250514': 'gemini-2.5-flash',
+      'claude-sonnet-4-20250514': 'gemini-2.5-pro',
       'claude-opus-4-20250514': 'gemini-2.5-pro',
     };
   }
