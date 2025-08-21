@@ -55,7 +55,7 @@ export class LoggingService {
         isStream: logData.isStream || false,
         userAgent: this.getHeader(event, 'user-agent') || '',
         errorMessage: logData.errorMessage || null,
-        requestUrl: event.node?.req?.url || '',
+        requestUrl: this.extractPathFromUrl(event.node?.req?.url || ''),
         requestModel: logData.model,
         inputTokens: logData.inputTokens || null,
         outputTokens: logData.outputTokens || null,
@@ -87,13 +87,13 @@ export class LoggingService {
         db = eventOrContext.env.DB;
         ipAddress = this.getClientIPFromContext(eventOrContext);
         userAgent = eventOrContext.req?.header?.('user-agent') || '';
-        requestUrl = eventOrContext.req?.url || '';
+        requestUrl = this.extractPathFromUrl(eventOrContext.req?.url || '');
       } else {
         // H3Event or mock event
         db = eventOrContext.context?.cloudflare?.env?.DB || this.db;
         ipAddress = this.getClientIP(eventOrContext);
         userAgent = this.getHeader(eventOrContext, 'user-agent') || '';
-        requestUrl = eventOrContext.node?.req?.url || '';
+        requestUrl = this.extractPathFromUrl(eventOrContext.node?.req?.url || '');
       }
 
       if (!db) {
@@ -146,13 +146,13 @@ export class LoggingService {
         db = eventOrContext.env.DB;
         ipAddress = this.getClientIPFromContext(eventOrContext);
         userAgent = eventOrContext.req?.header?.('user-agent') || '';
-        requestUrl = eventOrContext.req?.url || '';
+        requestUrl = this.extractPathFromUrl(eventOrContext.req?.url || '');
       } else {
         // H3Event or mock event
         db = eventOrContext.context?.cloudflare?.env?.DB || this.db;
         ipAddress = this.getClientIP(eventOrContext);
         userAgent = this.getHeader(eventOrContext, 'user-agent') || '';
-        requestUrl = eventOrContext.node?.req?.url || '';
+        requestUrl = this.extractPathFromUrl(eventOrContext.node?.req?.url || '');
       }
 
       if (!db) {
@@ -187,9 +187,19 @@ export class LoggingService {
   }
 
   private getClientIPFromContext(c: Context): string {
+    // Cloudflare Workers 环境下的IP获取优先级
     const cfConnectingIP = c.req.header('cf-connecting-ip');
     if (cfConnectingIP) {
       return cfConnectingIP;
+    }
+
+    const cfRay = c.req.header('cf-ray');
+    if (cfRay) {
+      // 如果有CF-Ray头，说明请求经过了Cloudflare
+      const cfIP = c.req.header('x-forwarded-for');
+      if (cfIP) {
+        return cfIP.split(',')[0].trim();
+      }
     }
 
     const forwarded = c.req.header('x-forwarded-for');
@@ -200,6 +210,12 @@ export class LoggingService {
     const realIP = c.req.header('x-real-ip');
     if (realIP) {
       return realIP;
+    }
+
+    // 尝试从请求对象中获取IP
+    const req = c.req as any;
+    if (req?.raw?.cf?.connectingIP) {
+      return req.raw.cf.connectingIP;
     }
 
     return 'unknown';
@@ -226,5 +242,17 @@ export class LoggingService {
 
   private getHeader(event: H3Event, name: string): string | undefined {
     return event.node?.req?.headers?.[name] as string | undefined;
+  }
+
+  private extractPathFromUrl(url: string): string {
+    try {
+      if (!url) return '';
+      const urlObj = new URL(url);
+      return urlObj.pathname + urlObj.search;
+    } catch {
+      // 如果URL解析失败，尝试直接提取路径部分
+      const pathMatch = url.match(/^https?:\/\/[^\/]+(\/.*)$/);
+      return pathMatch ? pathMatch[1] : url;
+    }
   }
 }

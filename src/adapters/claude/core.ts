@@ -47,6 +47,7 @@ export class ClaudeCore {
       'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
       'claude-sonnet-4-20250514': 'gemini-2.5-flash',
       'claude-opus-4-20250514': 'gemini-2.5-pro',
+      'claude-opus-4-1-20250805': 'gemini-2.5-pro',
     };
   }
 
@@ -55,7 +56,7 @@ export class ClaudeCore {
     const modelMap = this.getModelMap();
     if (modelMap[model]) return modelMap[model];
     // Fallback
-    return 'gemini-2.5-flash';
+    return 'gemini-2.0-flash';
   }
 
   // 工具schema修剪（Gemini约束）

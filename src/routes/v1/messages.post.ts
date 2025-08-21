@@ -98,11 +98,15 @@ app.post('/', async (c) => {
       context: { cloudflare: { env: c.env } }
     };
     
-    await loggingService.logSuccess(mockEvent as any, selectedApiKey, requestBody.model || 'claude-3-sonnet-20240229', responseTime, {
+    // 从响应头中获取真实的Gemini模型信息
+    const realModel = response.headers.get('x-real-model') || requestBody.model || 'claude-3-sonnet-20240229';
+    const requestedModel = response.headers.get('x-requested-model') || requestBody.model;
+    
+    await loggingService.logSuccess(mockEvent as any, selectedApiKey, realModel, responseTime, {
       isStream: !!requestBody.stream,
       inputTokens,
       outputTokens,
-      requestModel: requestBody.model
+      requestModel: requestedModel
     });
     
     // Return the response

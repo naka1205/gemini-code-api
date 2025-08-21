@@ -143,29 +143,17 @@ database_name = "gemini-code"
 database_id = "<your-database-id>"
 ```
 
-4) 配置线上密钥
 
-```bash
-npx wrangler secret put GEMINI_API_KEYS
-# 粘贴你的逗号分隔的 Gemini API Key 列表
-```
-
-5) 应用数据库迁移（远端）
+4 应用数据库迁移（远端）
 
 ```bash
 npm run db:migrate
 ```
 
-6) 部署到 Workers
+5) 部署到 Workers
 
 ```bash
 npm run deploy
-```
-
-7) 验证健康检查
-
-```bash
-curl https://<your-worker-subdomain>/health
 ```
 
 完成上述步骤后，即可使用本文“使用说明”中的任一协议示例进行调用。

@@ -51,11 +51,19 @@ export class ClaudeMessagesAdapter extends ClaudeCore {
           }
         }
       } catch {}
+      
+      // 添加真实的Gemini模型信息到响应头中，供日志记录使用
+      const responseHeaders = {
+        ...this.jsonHeaders(),
+        'x-real-model': geminiData.model,
+        'x-requested-model': claudeRequest.model || 'claude'
+      };
+      
       return new Response(
         this.json(result),
         {
           status: 200,
-          headers: this.jsonHeaders()
+          headers: responseHeaders
         }
       );
     } catch (e: any) {

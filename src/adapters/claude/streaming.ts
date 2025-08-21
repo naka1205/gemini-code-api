@@ -35,12 +35,17 @@ export class ClaudeStreamingAdapter extends ClaudeCore {
         2
       );
 
+      // 添加真实的Gemini模型信息到响应头中，供日志记录使用
+      const responseHeaders = {
+        ...this.sseHeaders(),
+        'x-request-id': requestId,
+        'x-real-model': geminiData.model,
+        'x-requested-model': claudeRequest.model || 'claude'
+      };
+      
       return new Response(stream as any, { 
         status: 200, 
-        headers: { 
-          ...this.sseHeaders(), 
-          'x-request-id': requestId 
-        } 
+        headers: responseHeaders
       });
     } catch (e: any) {
       return this.handleError(e);
