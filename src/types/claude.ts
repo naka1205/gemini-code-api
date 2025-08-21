@@ -1,5 +1,12 @@
 // Claude API类型定义
 
+// 基础配置接口
+export interface ClaudeConfig {
+  apiKey: string;
+  baseURL?: string;
+  timeout?: number;
+}
+
 // 内容块类型
 export interface ContentBlock {
   type: 'text' | 'image' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
@@ -18,9 +25,9 @@ export interface ContentBlock {
   name?: string;
   input?: any;
   tool_use_id?: string;
+  id?: string; // for tool_use blocks
   // generic nested content
   content?: string | ContentBlock[];
-  id?: string; // for tool_use blocks
 }
 
 // Claude消息
@@ -34,11 +41,6 @@ export interface ClaudeTool {
   name: string;
   description?: string;
   input_schema: any;
-}
-
-export interface ClaudeThinkingConfig {
-  type: 'enabled' | 'disabled';
-  budget_tokens?: number;
 }
 
 // 工具选择
@@ -60,7 +62,6 @@ export interface ClaudeRequest {
   stream?: boolean;
   tools?: ClaudeTool[];
   tool_choice?: ToolChoice;
-  thinking?: ClaudeThinkingConfig;
 }
 
 // Claude响应使用情况
@@ -69,7 +70,6 @@ export interface ClaudeUsage {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
-  thinking_time_ms?: number;
 }
 
 // Claude响应
@@ -95,7 +95,7 @@ export type StreamEventType =
   | 'ping';
 
 // 流式事件
-export interface StreamEvent {
+export interface ClaudeStreamEvent {
   type: StreamEventType;
   message?: Partial<ClaudeResponse>;
   index?: number;
@@ -128,14 +128,11 @@ export interface GeminiClaudeResponse {
       parts?: any[];
     };
     finishReason?: string;
-    thought?: string;
   }>;
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     totalTokenCount?: number;
-    thoughtsTokenCount?: number;
-    thinkingTokenCount?: number;
   };
 }
 

@@ -3,4 +3,3 @@
 export { ClaudeCore } from './core';
 export { ClaudeMessagesAdapter } from './messages';
 export { ClaudeStreamingAdapter } from './streaming';
-export type { ClaudeConfig } from './core';
