@@ -1,37 +1,24 @@
-// Common types for the API service
+/**
+ * 类型定义统一导出
+ */
 
-export interface ApiError {
-  error: {
-    message: string;
-    type: string;
-    code?: string;
-  };
-}
+// 通用类型
+export * from './common.js';
 
-export interface LogData {
-  apiKey: string;
-  model: string;
-  responseTime: number;
-  statusCode: number;
-  isStream?: boolean;
-  inputTokens?: number;
-  outputTokens?: number;
-  errorMessage?: string;
-}
+// API类型
+export * from './api.js';
 
-export interface RequestLog {
-  id: string;
-  apiKeyHash: string;
-  model: string;
-  ipAddress: string;
-  statusCode: number;
-  requestTimestamp: string;
-  responseTimeMs: number;
-  isStream: boolean;
-  userAgent: string;
-  errorMessage?: string;
-  requestUrl: string;
-  requestModel: string;
-  inputTokens?: number;
-  outputTokens?: number;
-}
+// 适配器类型
+export * from './adapters.js';
+
+// 认证类型
+export * from './auth.js';
+
+// 数据库类型
+export * from './database.js';
+
+// HTTP类型
+export * from './http.js';
+
+// 服务类型
+export * from './services.js';

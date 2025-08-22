@@ -1,153 +1,263 @@
-// OpenAI嵌入向量适配器模块
-// 处理嵌入向量生成请求，包括批量处理
+/**
+ * OpenAI嵌入适配器
+ * 处理OpenAI /v1/embeddings API兼容性
+ */
+import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '@/adapters/base/adapter.js';
+import { RequestBodyValidator } from '@/adapters/base/validator.js';
+import { AdapterErrorHandler } from '@/adapters/base/errors.js';
+import { API_CONFIG } from '@/utils/constants.js';
 
-import { OpenAICore } from './core';
-import type { OpenAIRequest } from '../../types/openai';
+/**
+ * OpenAI嵌入请求格式
+ */
+export interface OpenAIEmbeddingRequest {
+  input: string | string[];
+  model: string;
+  encoding_format?: 'float' | 'base64';
+  dimensions?: number;
+  user?: string;
+}
 
-export class OpenAIEmbeddingsAdapter extends OpenAICore {
-  private readonly DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+/**
+ * OpenAI嵌入响应格式
+ */
+export interface OpenAIEmbeddingResponse {
+  object: string;
+  data: Array<{
+    object: string;
+    embedding: number[];
+    index: number;
+  }>;
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+}
 
-  // 处理嵌入向量请求
-  async create(req: OpenAIRequest): Promise<Response> {
-    try {
-      if (typeof req.model !== "string") {
-        throw new Error("model is not specified");
-      }
+/**
+ * OpenAI嵌入适配器
+ */
+export class OpenAIEmbeddingAdapter extends BaseAdapter {
+  constructor() {
+    super('openai');
+  }
 
-      const model = this.getEmbeddingModel(req.model);
-      const input = this.normalizeInput(req.input);
-      
-      const requestBody = this.buildEmbeddingRequest(model, input, req.dimensions);
-      
-      const response = await this.makeRequest(`${model}:batchEmbedContents`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+  /**
+   * 验证嵌入请求
+   */
+  protected async validateRequest(context: AdapterContext): Promise<void> {
+    const body = await RequestBodyValidator.validateCommonRequestBody(context.request) as OpenAIEmbeddingRequest;
+
+    // 验证必填字段
+    RequestBodyValidator.validateRequired(body.input, 'input');
+    RequestBodyValidator.validateRequired(body.model, 'model');
+
+    // 验证输入格式
+    if (typeof body.input === 'string') {
+      RequestBodyValidator.validateStringLength(body.input, 'input', 1, 8000);
+    } else if (Array.isArray(body.input)) {
+      RequestBodyValidator.validateArrayLength(body.input, 'input', 1, 2048);
+      body.input.forEach((text, index) => {
+        RequestBodyValidator.validateRequired(text, `input[${index}]`);
+        RequestBodyValidator.validateStringLength(text, `input[${index}]`, 1, 8000);
       });
-
-      let responseBody: string;
-      if (response.ok) {
-        const data = await response.text();
-        const parsedData = JSON.parse(data);
-        responseBody = this.transformEmbeddingResponse(parsedData, req.model);
-      } else {
-        responseBody = await response.text();
-      }
-
-      return new Response(responseBody, this.fixCors(response));
-    } catch (err: any) {
-      return this.handleError(err);
+    } else {
+      throw new Error('Input must be a string or array of strings');
     }
+
+    // 验证模型是否支持嵌入
+    const mappedModel = this.mapEmbeddingModel(body.model);
+    if (!mappedModel) {
+      AdapterErrorHandler.handleModelMappingError(body.model, 'openai');
+    }
+
+    // 验证编码格式
+    if (body.encoding_format && !['float', 'base64'].includes(body.encoding_format)) {
+      RequestBodyValidator.validateEnum(body.encoding_format, 'encoding_format', ['float', 'base64']);
+    }
+
+    // 验证维度参数
+    if (body.dimensions !== undefined) {
+      RequestBodyValidator.validateNumberRange(body.dimensions, 'dimensions', 1, 3072);
+    }
+
+    // 将验证后的请求体存储到上下文
+    context.context.set('requestBody', body);
+    context.context.set('geminiModel', mappedModel);
   }
 
-  // 获取嵌入模型名称
-  private getEmbeddingModel(model: string): string {
-    if (model.startsWith("models/")) {
-      return model;
-    }
+  /**
+   * 转换嵌入请求为Gemini格式
+   */
+  protected async transformRequest(context: AdapterContext): Promise<any> {
+    const openaiRequest = context.context.get('requestBody') as OpenAIEmbeddingRequest;
     
-    // 如果不是Gemini模型，使用默认嵌入模型
-    if (!model.startsWith("gemini-")) {
-      model = this.DEFAULT_EMBEDDINGS_MODEL;
-    }
-    
-    return "models/" + model;
-  }
-
-  // 标准化输入
-  private normalizeInput(input: string | string[] | undefined): string[] {
-    if (!input) {
-      throw new Error("input is required");
-    }
-    
-    return Array.isArray(input) ? input : [input];
-  }
-
-  // 构建嵌入请求
-  private buildEmbeddingRequest(model: string, input: string[], dimensions?: number): any {
-    return {
-      requests: input.map((text: string) => ({
-        model,
-        content: { parts: [{ text }] },
-        ...(dimensions && { outputDimensionality: dimensions }),
-      }))
-    };
-  }
-
-  // 转换嵌入响应
-  private transformEmbeddingResponse(data: any, originalModel: string): string {
-    const { embeddings } = data;
-    
-    if (!embeddings || !Array.isArray(embeddings)) {
-      throw new Error("Invalid embedding response format");
-    }
-
-    const response = {
-      object: "list",
-      data: embeddings.map(({ values }: { values: number[] }, index: number) => ({
-        object: "embedding",
-        index,
-        embedding: values,
-      })),
-      model: originalModel,
-      usage: {
-        prompt_tokens: this.calculatePromptTokens(embeddings.length),
-        total_tokens: this.calculatePromptTokens(embeddings.length),
-      }
-    };
-
-    return JSON.stringify(response, null, 2);
-  }
-
-  // 计算提示token数量（简单估算）
-  private calculatePromptTokens(embeddingCount: number): number {
-    // 简单估算：每个嵌入大约对应10个token
-    return embeddingCount * 10;
-  }
-
-  // 批量处理嵌入请求
-  async batchCreate(requests: OpenAIRequest[]): Promise<Response[]> {
-    const promises = requests.map(req => this.create(req));
-    return Promise.all(promises);
-  }
-
-  // 验证嵌入请求
-  private validateEmbeddingRequest(req: OpenAIRequest): void {
-    if (!req.input) {
-      throw new Error("input parameter is required");
-    }
-
-    if (typeof req.input === 'string' && req.input.trim().length === 0) {
-      throw new Error("input cannot be empty");
-    }
-
-    if (Array.isArray(req.input)) {
-      if (req.input.length === 0) {
-        throw new Error("input array cannot be empty");
-      }
-      
-      if (req.input.some(item => typeof item !== 'string' || item.trim().length === 0)) {
-        throw new Error("all input items must be non-empty strings");
-      }
-
-      // 检查批量大小限制
-      if (req.input.length > 100) {
-        throw new Error("batch size cannot exceed 100 items");
-      }
-    }
-
-    if (req.dimensions && (req.dimensions < 1 || req.dimensions > 3072)) {
-      throw new Error("dimensions must be between 1 and 3072");
-    }
-  }
-
-  // 创建带验证的嵌入
-  async createWithValidation(req: OpenAIRequest): Promise<Response> {
     try {
-      this.validateEmbeddingRequest(req);
-      return await this.create(req);
-    } catch (err: any) {
-      return this.handleError(err);
+      // 将输入标准化为数组
+      const inputs = Array.isArray(openaiRequest.input) 
+        ? openaiRequest.input 
+        : [openaiRequest.input];
+
+      // Gemini嵌入API格式
+      return {
+        requests: inputs.map((text, index) => ({
+          model: `models/${context.context.get('geminiModel')}`,
+          content: {
+            parts: [{ text }]
+          },
+          taskType: 'RETRIEVAL_DOCUMENT', // 默认任务类型
+          title: `Document ${index + 1}`, // 可选标题
+        }))
+      };
+    } catch (error) {
+      AdapterErrorHandler.handleTransformError(error as Error, 'openai-embedding-to-gemini');
     }
+  }
+
+  /**
+   * 转换Gemini嵌入响应为OpenAI格式
+   */
+  protected async transformResponse(response: any, context: AdapterContext): Promise<AdapterResult> {
+    const openaiRequest = context.context.get('requestBody') as OpenAIEmbeddingRequest;
+    
+    try {
+      // 验证响应结构
+      if (!response.embeddings || !Array.isArray(response.embeddings)) {
+        AdapterErrorHandler.validateResponse(response, ['embeddings']);
+      }
+
+      // 转换为OpenAI格式
+      const openaiResponse: OpenAIEmbeddingResponse = {
+        object: 'list',
+        data: response.embeddings.map((embedding: any, index: number) => ({
+          object: 'embedding',
+          embedding: this.processEmbedding(embedding.values, openaiRequest.encoding_format, openaiRequest.dimensions),
+          index,
+        })),
+        model: openaiRequest.model,
+        usage: this.calculateUsage(openaiRequest.input, response),
+      };
+
+      // 存储token使用信息用于指标记录
+      context.context.set('tokenUsage', openaiResponse.usage);
+
+      return {
+        data: openaiResponse,
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
+    } catch (error) {
+      AdapterErrorHandler.handleTransformError(error as Error, 'gemini-embedding-to-openai');
+    }
+  }
+
+  /**
+   * 嵌入不支持流式响应
+   */
+  protected async createStreamingResponse(
+    _transformedRequest: any,
+    _context: AdapterContext
+  ): Promise<StreamingAdapterResult> {
+    throw new Error('Streaming is not supported for embeddings');
+  }
+
+  /**
+   * 构建Gemini嵌入API URL
+   */
+  protected buildGeminiApiUrl(_request: any, _context: AdapterContext): string {
+    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}:batchEmbedContents`;
+  }
+
+  /**
+   * 从上下文提取模型信息
+   */
+  protected extractModelFromContext(context: AdapterContext): string {
+    const openaiRequest = context.context.get('requestBody') as OpenAIEmbeddingRequest;
+    return openaiRequest?.model || 'text-embedding-ada-002';
+  }
+
+  /**
+   * 检查是否支持流式响应
+   */
+  supportsStreaming(): boolean {
+    return false; // 嵌入不支持流式响应
+  }
+
+  /**
+   * 获取支持的功能
+   */
+  supportsFeature(feature: string): boolean {
+    const supportedFeatures = ['embedding', 'batch-embedding'];
+    return supportedFeatures.includes(feature);
+  }
+
+  // === 私有辅助方法 ===
+
+  /**
+   * 映射嵌入模型名称
+   */
+  private mapEmbeddingModel(openaiModel: string): string | null {
+    const embeddingModels: Record<string, string> = {
+      'text-embedding-ada-002': 'text-embedding-004',
+      'text-embedding-3-small': 'text-embedding-004',
+      'text-embedding-3-large': 'text-multilingual-embedding-002',
+      'text-similarity-ada-001': 'text-embedding-004',
+      'text-similarity-babbage-001': 'text-embedding-004',
+      'text-similarity-curie-001': 'text-embedding-004',
+      'text-similarity-davinci-001': 'text-multilingual-embedding-002',
+    };
+
+    return embeddingModels[openaiModel] || null;
+  }
+
+  /**
+   * 处理嵌入向量
+   */
+  private processEmbedding(
+    values: number[],
+    encodingFormat?: string,
+    dimensions?: number
+  ): number[] | string {
+    let processedValues = values;
+
+    // 如果指定了维度，进行截断或填充
+    if (dimensions && dimensions !== values.length) {
+      if (dimensions < values.length) {
+        processedValues = values.slice(0, dimensions);
+      } else {
+        // 填充零值
+        processedValues = [...values, ...new Array(dimensions - values.length).fill(0)];
+      }
+    }
+
+    // 根据编码格式处理
+    if (encodingFormat === 'base64') {
+      // 转换为base64编码
+      const buffer = new Float32Array(processedValues);
+      const bytes = new Uint8Array(buffer.buffer);
+      return btoa(String.fromCharCode(...bytes));
+    }
+
+    return processedValues;
+  }
+
+  /**
+   * 计算token使用量
+   */
+  private calculateUsage(input: string | string[], _response: any): { prompt_tokens: number; total_tokens: number } {
+    // 估算prompt tokens
+    const texts = Array.isArray(input) ? input : [input];
+    const promptTokens = texts.reduce((total, text) => {
+      // 简单估算：每4个字符约等于1个token
+      return total + Math.ceil(text.length / 4);
+    }, 0);
+
+    return {
+      prompt_tokens: promptTokens,
+      total_tokens: promptTokens, // 嵌入请求没有completion tokens
+    };
   }
 }

@@ -1,277 +1,338 @@
-// OpenAI模型列表适配器模块
-// 处理模型列表获取和格式化
+/**
+ * OpenAI模型兼容性映射
+ * 提供OpenAI模型到Gemini模型的映射关系
+ */
+import { MODEL_MAPPINGS } from '@/utils/constants.js';
 
-import { OpenAICore } from './core';
-
-export interface ModelInfo {
+/**
+ * OpenAI模型信息（兼容格式）
+ */
+export interface OpenAIModelInfo {
   id: string;
-  object: string;
+  object: 'model';
   created: number;
   owned_by: string;
-  permission?: any[];
-  root?: string;
-  parent?: string | null;
+  permission: Array<{
+    id: string;
+    object: 'model_permission';
+    created: number;
+    allow_create_engine: boolean;
+    allow_sampling: boolean;
+    allow_logprobs: boolean;
+    allow_search_indices: boolean;
+    allow_view: boolean;
+    allow_fine_tuning: boolean;
+    organization: string;
+    group: null;
+    is_blocking: boolean;
+  }>;
+  root: string;
+  parent: null;
 }
 
-export interface ModelsResponse {
-  object: string;
-  data: ModelInfo[];
+/**
+ * OpenAI模型列表响应
+ */
+export interface OpenAIModelsResponse {
+  object: 'list';
+  data: OpenAIModelInfo[];
 }
 
-export class OpenAIModelsAdapter extends OpenAICore {
-  
-  // 获取模型列表
-  async list(): Promise<Response> {
-    try {
-      const response = await this.makeRequest('models', {
-        method: 'GET'
-      });
-
-      let responseBody: string;
-      if (response.ok) {
-        const data = await response.text();
-        const parsedData = JSON.parse(data);
-        responseBody = this.transformModelsResponse(parsedData);
-      } else {
-        responseBody = await response.text();
-      }
-
-      return new Response(responseBody, this.fixCors(response));
-    } catch (err: any) {
-      return this.handleError(err);
-    }
+/**
+ * OpenAI兼容模型管理器
+ */
+export class OpenAIModelManager {
+  /**
+   * 获取所有支持的OpenAI兼容模型
+   */
+  static getSupportedModels(): string[] {
+    return Object.keys(MODEL_MAPPINGS);
   }
 
-  // 获取特定模型信息
-  async retrieve(modelId: string): Promise<Response> {
-    try {
-      if (!modelId) {
-        throw new Error("Model ID is required");
-      }
-
-      // 首先获取所有模型
-      const modelsResponse = await this.list();
-      if (!modelsResponse.ok) {
-        return modelsResponse;
-      }
-
-      const modelsData = await modelsResponse.text();
-      const parsedModels: ModelsResponse = JSON.parse(modelsData);
-      
-      // 查找特定模型
-      const model = parsedModels.data.find(m => m.id === modelId);
-      if (!model) {
-        throw new Error(`Model ${modelId} not found`);
-      }
-
-      return new Response(JSON.stringify(model, null, 2), {
-        status: 200,
-        headers: this.fixCors({ headers: new Headers({ 'Content-Type': 'application/json' }) }).headers
-      });
-    } catch (err: any) {
-      return this.handleError(err);
-    }
+  /**
+   * 检查OpenAI模型是否受支持
+   */
+  static isModelSupported(model: string): boolean {
+    return model in MODEL_MAPPINGS;
   }
 
-  // 转换模型响应格式
-  private transformModelsResponse(data: any): string {
-    const { models } = data;
-    
-    if (!models || !Array.isArray(models)) {
-      throw new Error("Invalid models response format");
-    }
+  /**
+   * 将OpenAI模型映射为Gemini模型
+   */
+  static mapToGeminiModel(openaiModel: string): string | null {
+    return MODEL_MAPPINGS[openaiModel as keyof typeof MODEL_MAPPINGS] || null;
+  }
 
-    const transformedModels = models.map(({ name }: { name: string }) => ({
-      id: name.replace("models/", ""),
-      object: "model",
-      created: 0,
-      owned_by: "google",
-      permission: [],
-      root: name.replace("models/", ""),
-      parent: null
+  /**
+   * 获取OpenAI格式的模型列表
+   */
+  static getModelList(): OpenAIModelsResponse {
+    const supportedModels = this.getSupportedModels();
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const models: OpenAIModelInfo[] = supportedModels.map(modelId => ({
+      id: modelId,
+      object: 'model',
+      created: timestamp,
+      owned_by: 'google-via-gemini-code-api',
+      permission: [{
+        id: `modelperm-${modelId}`,
+        object: 'model_permission',
+        created: timestamp,
+        allow_create_engine: false,
+        allow_sampling: true,
+        allow_logprobs: false,
+        allow_search_indices: false,
+        allow_view: true,
+        allow_fine_tuning: false,
+        organization: '*',
+        group: null,
+        is_blocking: false,
+      }],
+      root: modelId,
+      parent: null,
     }));
 
-    const response: ModelsResponse = {
-      object: "list",
-      data: transformedModels
+    return {
+      object: 'list',
+      data: models,
     };
-
-    return JSON.stringify(response, null, 2);
   }
 
-  // 获取支持的模型类别
-  getSupportedModelCategories(): string[] {
-    return [
-      'gemini',
-      'gemma', 
-      'learnlm',
-      'text-embedding'
-    ];
+  /**
+   * 获取特定模型的详细信息
+   */
+  static getModelInfo(modelId: string): OpenAIModelInfo | null {
+    if (!this.isModelSupported(modelId)) {
+      return null;
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    return {
+      id: modelId,
+      object: 'model',
+      created: timestamp,
+      owned_by: 'google-via-gemini-code-api',
+      permission: [{
+        id: `modelperm-${modelId}`,
+        object: 'model_permission',
+        created: timestamp,
+        allow_create_engine: false,
+        allow_sampling: true,
+        allow_logprobs: false,
+        allow_search_indices: false,
+        allow_view: true,
+        allow_fine_tuning: false,
+        organization: '*',
+        group: null,
+        is_blocking: false,
+      }],
+      root: modelId,
+      parent: null,
+    };
   }
 
-  // 检查模型是否支持
-  isModelSupported(modelId: string): boolean {
-    const supportedPrefixes = this.getSupportedModelCategories();
-    return supportedPrefixes.some(prefix => modelId.startsWith(prefix));
+  /**
+   * 根据用途筛选模型
+   */
+  static getModelsByCapability(capability: 'chat' | 'completion' | 'embedding' | 'vision'): string[] {
+    const supportedModels = this.getSupportedModels();
+
+    switch (capability) {
+      case 'chat':
+      case 'completion':
+        return supportedModels.filter(model => 
+          !model.includes('embedding') && !model.includes('vision')
+        );
+      
+      case 'embedding':
+        return supportedModels.filter(model => model.includes('embedding'));
+      
+      case 'vision':
+        // GPT-4 系列模型通过Gemini 2.5支持视觉功能
+        return supportedModels.filter(model => 
+          model.startsWith('gpt-4') && !model.includes('embedding')
+        );
+      
+      default:
+        return supportedModels;
+    }
   }
 
-  // 获取模型能力信息
-  getModelCapabilities(modelId: string): any {
-    const capabilities: Record<string, any> = {
-      'gemini-2.5-flash': {
-        supports_chat: true,
-        supports_embeddings: false,
+  /**
+   * 获取模型的建议配置
+   */
+  static getModelDefaults(modelId: string): {
+    temperature: number;
+    max_tokens: number;
+    top_p: number;
+    frequency_penalty: number;
+    presence_penalty: number;
+  } {
+    // 根据不同模型类型返回推荐配置
+    if (modelId.includes('gpt-4')) {
+      return {
+        temperature: 0.7,
+        max_tokens: 4096,
+        top_p: 1.0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      };
+    } else if (modelId.includes('gpt-3.5')) {
+      return {
+        temperature: 1.0,
+        max_tokens: 4096,
+        top_p: 1.0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      };
+    } else {
+      return {
+        temperature: 0.9,
+        max_tokens: 2048,
+        top_p: 1.0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      };
+    }
+  }
+
+  /**
+   * 获取模型的限制信息
+   */
+  static getModelLimits(modelId: string): {
+    max_tokens: number;
+    context_length: number;
+    supports_functions: boolean;
+    supports_vision: boolean;
+    supports_streaming: boolean;
+  } {
+    const geminiModel = this.mapToGeminiModel(modelId);
+    
+    if (modelId.includes('gpt-4')) {
+      return {
+        max_tokens: 4096,
+        context_length: geminiModel?.includes('2.5') ? 2097152 : 32768,
         supports_functions: true,
         supports_vision: true,
-        supports_audio: true,
-        max_tokens: 8192,
-        context_window: 1000000
-      },
-      'gemini-2.5-pro': {
-        supports_chat: true,
-        supports_embeddings: false,
+        supports_streaming: true,
+      };
+    } else if (modelId.includes('gpt-3.5')) {
+      return {
+        max_tokens: 4096,
+        context_length: geminiModel?.includes('2.5') ? 1048576 : 16384,
         supports_functions: true,
-        supports_vision: true,
-        supports_audio: true,
-        max_tokens: 8192,
-        context_window: 2000000
-      },
-      'gemini-2.0-flash': {
-        supports_chat: true,
-        supports_embeddings: false,
-        supports_functions: true,
-        supports_vision: true,
-        supports_audio: true,
-        max_tokens: 8192,
-        context_window: 1000000
-      },
-      'text-embedding-004': {
-        supports_chat: false,
-        supports_embeddings: true,
+        supports_vision: false,
+        supports_streaming: true,
+      };
+    } else if (modelId.includes('embedding')) {
+      return {
+        max_tokens: 8191, // 嵌入维度
+        context_length: 8191,
         supports_functions: false,
         supports_vision: false,
-        supports_audio: false,
-        max_dimensions: 768,
-        context_window: 2048
-      }
-    };
-
-    return capabilities[modelId] || {
-      supports_chat: true,
-      supports_embeddings: false,
-      supports_functions: false,
-      supports_vision: false,
-      supports_audio: false,
-      max_tokens: 4096,
-      context_window: 32768
-    };
-  }
-
-  // 获取模型详细信息（包含能力）
-  async getModelDetails(modelId: string): Promise<Response> {
-    try {
-      const modelResponse = await this.retrieve(modelId);
-      if (!modelResponse.ok) {
-        return modelResponse;
-      }
-
-      const modelData = await modelResponse.text();
-      const model = JSON.parse(modelData);
-      
-      // 添加能力信息
-      const capabilities = this.getModelCapabilities(modelId);
-      const detailedModel = {
-        ...model,
-        capabilities
+        supports_streaming: false,
       };
-
-      return new Response(JSON.stringify(detailedModel, null, 2), {
-        status: 200,
-        headers: this.fixCors({ headers: new Headers({ 'Content-Type': 'application/json' }) }).headers
-      });
-    } catch (err: any) {
-      return this.handleError(err);
+    } else {
+      return {
+        max_tokens: 2048,
+        context_length: 32768,
+        supports_functions: false,
+        supports_vision: false,
+        supports_streaming: true,
+      };
     }
   }
 
-  // 按类别过滤模型
-  async listByCategory(category: string): Promise<Response> {
-    try {
-      const modelsResponse = await this.list();
-      if (!modelsResponse.ok) {
-        return modelsResponse;
-      }
+  /**
+   * 验证模型参数是否合理
+   */
+  static validateModelParams(modelId: string, params: any): string[] {
+    const errors: string[] = [];
+    const limits = this.getModelLimits(modelId);
 
-      const modelsData = await modelsResponse.text();
-      const parsedModels: ModelsResponse = JSON.parse(modelsData);
-      
-      const filteredModels = parsedModels.data.filter(model => 
-        model.id.startsWith(category)
-      );
-
-      const response: ModelsResponse = {
-        object: "list",
-        data: filteredModels
-      };
-
-      return new Response(JSON.stringify(response, null, 2), {
-        status: 200,
-        headers: this.fixCors({ headers: new Headers({ 'Content-Type': 'application/json' }) }).headers
-      });
-    } catch (err: any) {
-      return this.handleError(err);
+    if (params.max_tokens && params.max_tokens > limits.max_tokens) {
+      errors.push(`max_tokens ${params.max_tokens} exceeds model limit ${limits.max_tokens}`);
     }
+
+    if (params.functions && !limits.supports_functions) {
+      errors.push(`Model ${modelId} does not support function calling`);
+    }
+
+    if (params.tools && !limits.supports_functions) {
+      errors.push(`Model ${modelId} does not support tools`);
+    }
+
+    if (params.stream && !limits.supports_streaming) {
+      errors.push(`Model ${modelId} does not support streaming`);
+    }
+
+    return errors;
   }
 
-  // 获取推荐模型
-  getRecommendedModels(): ModelInfo[] {
-    return [
-      {
-        id: "gemini-2.5-flash",
-        object: "model",
-        created: 0,
-        owned_by: "google",
-        permission: [],
-        root: "gemini-2.5-flash",
-        parent: null
-      },
-      {
-        id: "gemini-2.5-pro", 
-        object: "model",
-        created: 0,
-        owned_by: "google",
-        permission: [],
-        root: "gemini-2.5-pro",
-        parent: null
-      },
-      {
-        id: "text-embedding-004",
-        object: "model", 
-        created: 0,
-        owned_by: "google",
-        permission: [],
-        root: "text-embedding-004",
-        parent: null
-      }
-    ];
+  /**
+   * 获取相似模型建议
+   */
+  static getSimilarModels(modelId: string): string[] {
+    if (modelId.includes('gpt-4')) {
+      return this.getSupportedModels().filter(m => m.includes('gpt-4') && m !== modelId);
+    } else if (modelId.includes('gpt-3.5')) {
+      return this.getSupportedModels().filter(m => m.includes('gpt-3.5') && m !== modelId);
+    } else if (modelId.includes('embedding')) {
+      return this.getSupportedModels().filter(m => m.includes('embedding') && m !== modelId);
+    }
+
+    return [];
   }
 
-  // 获取推荐模型列表
-  async listRecommended(): Promise<Response> {
-    try {
-      const recommendedModels = this.getRecommendedModels();
+  /**
+   * 创建模型映射说明文档
+   */
+  static getModelMappingDocs(): Record<string, {
+    openai_model: string;
+    gemini_model: string;
+    description: string;
+    capabilities: string[];
+  }> {
+    const docs: Record<string, any> = {};
+    
+    Object.entries(MODEL_MAPPINGS).forEach(([openaiModel, geminiModel]) => {
+      const limits = this.getModelLimits(openaiModel);
       
-      const response: ModelsResponse = {
-        object: "list",
-        data: recommendedModels
+      docs[openaiModel] = {
+        openai_model: openaiModel,
+        gemini_model: geminiModel,
+        description: this.getModelDescription(openaiModel),
+        capabilities: this.getModelCapabilities(limits),
       };
+    });
 
-      return new Response(JSON.stringify(response, null, 2), {
-        status: 200,
-        headers: this.fixCors({ headers: new Headers({ 'Content-Type': 'application/json' }) }).headers
-      });
-    } catch (err: any) {
-      return this.handleError(err);
+    return docs;
+  }
+
+  // === 私有辅助方法 ===
+
+  private static getModelDescription(modelId: string): string {
+    if (modelId.includes('gpt-4o')) {
+      return 'Most capable OpenAI model, mapped to Gemini 2.5 Pro for best performance';
+    } else if (modelId.includes('gpt-4')) {
+      return 'High capability model suitable for complex tasks';
+    } else if (modelId.includes('gpt-3.5')) {
+      return 'Fast and efficient model for everyday tasks';
+    } else if (modelId.includes('embedding')) {
+      return 'Text embedding model for similarity and search tasks';
     }
+    return 'Language model';
+  }
+
+  private static getModelCapabilities(limits: any): string[] {
+    const capabilities: string[] = ['text-generation'];
+    
+    if (limits.supports_functions) capabilities.push('function-calling');
+    if (limits.supports_vision) capabilities.push('vision');
+    if (limits.supports_streaming) capabilities.push('streaming');
+    
+    return capabilities;
   }
 }

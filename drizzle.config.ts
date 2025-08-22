@@ -1,11 +1,8 @@
 import type { Config } from 'drizzle-kit';
 
 export default {
-  schema: './src/utils/db/schema.ts',
+  schema: './src/database/schema.ts',
   out: './migrations',
-  driver: 'd1',
-  dbCredentials: {
-    wranglerConfigPath: './wrangler.toml',
-    dbName: 'gemini-code',
-  },
+  dialect: 'sqlite',
+  driver: 'd1-http',
 } satisfies Config;
