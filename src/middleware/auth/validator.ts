@@ -3,7 +3,6 @@
  * 纯代理模式 - 验证客户端提交的Gemini API KEY格式和有效性
  */
 import type { ClientType } from '../../types/index.js';
-import { AUTH_CONFIG } from '../../utils/constants.js';
 
 /**
  * API KEY验证结果
@@ -32,44 +31,46 @@ export interface BatchValidationResult {
 export class ApiKeyValidator {
   /**
    * 验证单个API KEY
+   * 简化验证：只检查是否以'AI'开头
    */
   validateApiKey(apiKey: string, _clientType?: ClientType): ValidationResult {
-    const errors: string[] = [];
-
-    // 基础格式检查
-    const basicValidation = this.validateBasicFormat(apiKey);
-    if (!basicValidation.isValid) {
-      return basicValidation;
-    }
-
-    // 长度检查
-    const lengthValidation = this.validateLength(apiKey);
-    if (!lengthValidation.isValid) {
-      errors.push(lengthValidation.reason);
-    }
-
-    // Gemini API KEY特定格式检查
-    const geminiValidation = this.validateGeminiFormat(apiKey);
-    if (!geminiValidation.isValid) {
-      errors.push(geminiValidation.reason);
-    }
-
-    // 如果有错误，返回验证失败
-    if (errors.length > 0) {
+    // 基础检查：空值和类型
+    if (!apiKey || typeof apiKey !== 'string') {
       return {
         isValid: false,
-        reason: 'validation_failed',
-        errors,
+        reason: 'API key is required and must be a string',
       };
     }
 
-    // 标准化KEY格式
-    const normalizedKey = this.normalizeApiKey(apiKey);
+    // 去除首尾空格
+    const trimmedKey = apiKey.trim();
+    if (!trimmedKey) {
+      return {
+        isValid: false,
+        reason: 'API key cannot be empty',
+      };
+    }
+
+    // 简化验证：只检查是否以'AI'开头
+    if (!trimmedKey.startsWith('AI')) {
+      return {
+        isValid: false,
+        reason: 'API key must start with "AI"',
+      };
+    }
+
+    // 基本长度检查（至少3个字符）
+    if (trimmedKey.length < 3) {
+      return {
+        isValid: false,
+        reason: 'API key is too short',
+      };
+    }
 
     return {
       isValid: true,
       reason: 'validation_passed',
-      normalizedKey,
+      normalizedKey: trimmedKey,
     };
   }
 
@@ -171,106 +172,7 @@ export class ApiKeyValidator {
 
   // === 私有验证方法 ===
 
-  private validateBasicFormat(apiKey: string): ValidationResult {
-    // 空值检查
-    if (!apiKey || typeof apiKey !== 'string') {
-      return {
-        isValid: false,
-        reason: 'empty_or_invalid_type',
-      };
-    }
 
-    // 去除首尾空格
-    const trimmedKey = apiKey.trim();
-    if (!trimmedKey) {
-      return {
-        isValid: false,
-        reason: 'empty_after_trim',
-      };
-    }
-
-    // 检查是否包含无效字符
-    const invalidChars = /[<>{}()[\]|\\^~`]/;
-    if (invalidChars.test(trimmedKey)) {
-      return {
-        isValid: false,
-        reason: 'contains_invalid_characters',
-      };
-    }
-
-    // 检查是否在黑名单中
-    if (this.isBlacklisted(trimmedKey)) {
-      return {
-        isValid: false,
-        reason: 'blacklisted_key',
-      };
-    }
-
-    return {
-      isValid: true,
-      reason: 'basic_format_valid',
-    };
-  }
-
-  private validateLength(apiKey: string): ValidationResult {
-    const length = apiKey.length;
-
-    if (length < AUTH_CONFIG.MIN_API_KEY_LENGTH) {
-      return {
-        isValid: false,
-        reason: `key_too_short_min_${AUTH_CONFIG.MIN_API_KEY_LENGTH}`,
-      };
-    }
-
-    if (length > AUTH_CONFIG.MAX_API_KEY_LENGTH) {
-      return {
-        isValid: false,
-        reason: `key_too_long_max_${AUTH_CONFIG.MAX_API_KEY_LENGTH}`,
-      };
-    }
-
-    return {
-      isValid: true,
-      reason: 'length_valid',
-    };
-  }
-
-  private validateGeminiFormat(apiKey: string): ValidationResult {
-    // 更宽松的Gemini格式检查，优先兼容性
-    
-    // 只棒逐明显错误的格式
-    if (apiKey.startsWith('sk-')) {
-      return {
-        isValid: false,
-        reason: 'openai_format_detected_need_gemini_key',
-      };
-    }
-
-    if (apiKey.startsWith('claude-') || (apiKey.includes('claude') && apiKey.length < 50)) {
-      return {
-        isValid: false,
-        reason: 'claude_format_detected_need_gemini_key',
-      };
-    }
-
-    // 检查低质量的测试key
-    const testKeys = ['test', 'demo', 'example', 'placeholder', 'your-api-key'];
-    const lowerKey = apiKey.toLowerCase();
-    for (const testKey of testKeys) {
-      if (lowerKey === testKey || lowerKey.startsWith(testKey + '-')) {
-        return {
-          isValid: false,
-          reason: 'test_or_placeholder_key',
-        };
-      }
-    }
-
-    // 其他情况下，只要符合基本要求就认为有效
-    return {
-      isValid: true,
-      reason: 'basic_format_valid',
-    };
-  }
 }
 
 /**

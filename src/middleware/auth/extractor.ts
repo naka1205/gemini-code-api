@@ -97,11 +97,13 @@ export class ApiKeyExtractor {
         
         // 提供具体的警告信息
         if (key.startsWith('sk-')) {
-          warnings.push(`OpenAI API key detected: ${this.maskKey(key)}. Please provide Gemini API key instead.`);
+          warnings.push(`OpenAI API key detected: ${this.maskKey(key)}. Please provide Gemini API key starting with "AI".`);
         } else if (key.includes('claude') || key.startsWith('claude-')) {
-          warnings.push(`Claude API key detected: ${this.maskKey(key)}. Please provide Gemini API key instead.`);
+          warnings.push(`Claude API key detected: ${this.maskKey(key)}. Please provide Gemini API key starting with "AI".`);
+        } else if (!key.startsWith('AI')) {
+          warnings.push(`Invalid API key format: ${this.maskKey(key)}. API key must start with "AI".`);
         } else {
-          warnings.push(`Invalid API key format: ${this.maskKey(key)}. Please provide valid Gemini API key.`);
+          warnings.push(`Invalid API key: ${this.maskKey(key)}. Please check your API key format.`);
         }
       }
     }
@@ -190,20 +192,18 @@ export class ApiKeyExtractor {
   }
 
   private isValidGeminiKeyFormat(apiKey: string): boolean {
-    // 基础检查 - 兼容性优先，只检查基本长度和类型
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
+    // 简化验证：只检查是否以'AI'开头
+    if (!apiKey || typeof apiKey !== 'string') {
       return false;
     }
 
-    // 更宽松的验证，支持各种格式的API key
-    // 只要不是明显的错误格式就认为有效
-    if (apiKey.length > 200) {
-      return false; // 过长
+    const trimmedKey = apiKey.trim();
+    if (!trimmedKey || trimmedKey.length < 3) {
+      return false;
     }
 
-    // 简单的字符集检查
-    const validPattern = /^[A-Za-z0-9+/=_.-]+$/;
-    return validPattern.test(apiKey);
+    // 只检查是否以'AI'开头
+    return trimmedKey.startsWith('AI');
   }
 
   private maskKey(apiKey: string): string {

@@ -16,7 +16,6 @@ import type { Context } from 'hono';
 // 中间件导入 - 使用相对路径
 import { cors } from './middleware/cors.js';
 import { logger } from './middleware/logger.js';
-import { errorHandler } from './middleware/error-handler.js';
 
 // 路由导入 - 使用相对路径
 import { createHealthRoutes } from './routes/health.js';
@@ -83,9 +82,6 @@ function createApp(): Hono {
   // 2. 请求日志记录
   app.use('/*', logger());
 
-  // 3. 错误处理中间件
-  app.use('/*', errorHandler());
-
   // === 根路径信息 ===
   
   app.get('/', (c: Context) => {
@@ -138,6 +134,13 @@ function createApp(): Hono {
   // 挂载v1beta子路由，路径匹配将由子路由处理
   app.route('/v1beta', createGenerateContentRoute());
   app.route('/v1beta/models', createGeminiModelsRoute());
+
+  // === 错误处理中间件 ===
+  // 注意：使用Hono的onError方法处理错误
+  app.onError(async (error, c) => {
+    const { handleError } = await import('./middleware/error-handler.js');
+    return await handleError(error, c);
+  });
 
   // === 404处理 ===
   

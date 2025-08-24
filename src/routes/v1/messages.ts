@@ -4,11 +4,236 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { detectClientType } from '../../middleware/auth/detector.js';
-import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
-import { throwError } from '../../middleware/error-handler.js';
-import { getLogger } from '../../middleware/logger.js';
-import { MODEL_MAPPINGS } from '../../utils/constants.js';
+import { detectClientType } from '../../middleware/auth/detector';
+import { extractAndValidateApiKeys } from '../../middleware/auth/extractor';
+import { throwError } from '../../middleware/error-handler';
+import { ProductionLogger as Logger } from '../../utils/logger';
+import { MODEL_MAPPINGS } from '../../utils/constants';
+
+/**
+ * 生成UUID
+ */
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+/**
+ * 创建Claude流式转换器
+ */
+function createClaudeStreamTransformer(
+  model: string,
+  options?: { emitPrelude?: boolean }
+): TransformStream<Uint8Array, Uint8Array> {
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+  const MESSAGE_ID = `msg_${generateUUID()}`;
+  let contentBlockOpen = false;
+  let contentBlockIndex = 0;
+  let currentBlockType: 'thinking' | 'text' | 'tool_use' | null = null;
+  let totalOutput = 0;
+  let firstTokenAt = 0;
+  let lineBuffer = '';
+
+  return new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      const emitPrelude = options?.emitPrelude !== false;
+      if (emitPrelude) {
+        const startEvt = { 
+          type: 'message_start', 
+          message: { 
+            id: MESSAGE_ID, 
+            type: 'message', 
+            role: 'assistant', 
+            content: [], 
+            model, 
+            stop_reason: null, 
+            stop_sequence: null, 
+            usage: { input_tokens: 0, output_tokens: 0 } 
+          } 
+        };
+        controller.enqueue(enc.encode(`event: message_start\n`));
+        controller.enqueue(enc.encode(`data: ${JSON.stringify(startEvt)}\n\n`));
+        controller.enqueue(enc.encode(`event: ping\n`));
+        controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'ping' })}\n\n`));
+        }
+    },
+    
+    transform(chunk, controller) {
+      // 缓冲跨块的行以避免在边界处截断JSON
+      lineBuffer += dec.decode(chunk, { stream: true });
+      let nlIndex;
+      while ((nlIndex = lineBuffer.indexOf('\n')) !== -1) {
+        const line = lineBuffer.slice(0, nlIndex);
+        lineBuffer = lineBuffer.slice(nlIndex + 1);
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6).trim();
+        if (!data) continue;
+        if (data === '[DONE]') {
+          continue;
+        }
+        try {
+          const obj = JSON.parse(data);
+           if (obj?.usageMetadata?.candidatesTokenCount != null) totalOutput = obj.usageMetadata.candidatesTokenCount;
+          const cand = Array.isArray(obj?.candidates) ? obj.candidates[0] : undefined;
+          const parts = cand?.content?.parts || [];
+          
+          if (!firstTokenAt && parts?.some((p:any)=>p?.text)) {
+            firstTokenAt = Date.now();
+          }
+          
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            
+            // Handle assistant text
+            if (part?.text) {
+              if (!contentBlockOpen || currentBlockType !== 'text') {
+                if (contentBlockOpen) {
+                  controller.enqueue(enc.encode(`event: content_block_stop\n`));
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+                  contentBlockIndex++;
+                }
+                const startBlock = { 
+                  type: 'content_block_start', 
+                  index: contentBlockIndex, 
+                  content_block: { type: 'text', text: '' } 
+                };
+                controller.enqueue(enc.encode(`event: content_block_start\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
+                contentBlockOpen = true;
+                 currentBlockType = 'text';
+              }
+              const deltaEvt = { 
+                type: 'content_block_delta', 
+                index: contentBlockIndex, 
+                delta: { type: 'text_delta', text: part.text } 
+              };
+              controller.enqueue(enc.encode(`event: content_block_delta\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(deltaEvt)}\n\n`));
+            }
+            
+            // Handle tool calls
+            if (part?.functionCall) {
+              if (contentBlockOpen) {
+                controller.enqueue(enc.encode(`event: content_block_stop\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+                contentBlockOpen = false;
+                currentBlockType = null;
+                contentBlockIndex++;
+              }
+              const toolUseId = `toolu_${generateUUID().replace(/-/g, '').slice(0, 24)}`;
+              const toolStart = { 
+                type: 'content_block_start', 
+                index: contentBlockIndex, 
+                content_block: { 
+                  type: 'tool_use', 
+                  id: toolUseId, 
+                  name: part.functionCall.name, 
+                  input: {} 
+                } 
+              };
+              controller.enqueue(enc.encode(`event: content_block_start\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(toolStart)}\n\n`));
+              
+              if (part.functionCall.args) {
+                const toolDelta = { 
+                  type: 'content_block_delta', 
+                  index: contentBlockIndex, 
+                  delta: { 
+                    type: 'input_json_delta', 
+                    partial_json: JSON.stringify(part.functionCall.args) 
+                  } 
+                };
+                controller.enqueue(enc.encode(`event: content_block_delta\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify(toolDelta)}\n\n`));
+              }
+              
+              controller.enqueue(enc.encode(`event: content_block_stop\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+              contentBlockIndex++;
+            }
+          }
+        } catch (e: any) {
+          console.warn('Failed to parse Gemini streaming response:', e);
+        }
+      }
+    },
+    
+    flush(controller) {
+      if (contentBlockOpen) {
+        controller.enqueue(enc.encode(`event: content_block_stop\n`));
+        controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+      }
+      
+      const stopEvt = { 
+        type: 'message_delta', 
+        delta: { stop_reason: 'end_turn', stop_sequence: null }, 
+        usage: { output_tokens: totalOutput } 
+      };
+      controller.enqueue(enc.encode(`event: message_delta\n`));
+      controller.enqueue(enc.encode(`data: ${JSON.stringify(stopEvt)}\n\n`));
+      
+      const endEvt = { type: 'message_stop' };
+      controller.enqueue(enc.encode(`event: message_stop\n`));
+      controller.enqueue(enc.encode(`data: ${JSON.stringify(endEvt)}\n\n`));
+    }
+  });
+}
+
+/**
+ * 处理流式消息请求
+ */
+async function handleStreamingMessages(
+  c: Context,
+  geminiModel: string,
+  geminiRequest: any,
+  selectedKey: string,
+  logger: any
+) {
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${selectedKey}`;
+  
+  logger.info('Calling Gemini streaming API', { model: geminiModel, url: geminiUrl.replace(selectedKey, '***') });
+
+  const response = await fetch(geminiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      'User-Agent': 'gemini-code-api/2.0.0',
+    },
+    body: JSON.stringify(geminiRequest),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({})) as any;
+    logger.error(`Gemini streaming API error: ${response.status}`, new Error(`API Error: ${errorData.error?.message || 'Unknown error'}`));
+    throwError.api(
+      errorData.error?.message || `Gemini API error: ${response.status}`,
+      response.status
+    );
+  }
+
+  // 设置SSE响应头
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+  c.header('x-powered-by', 'gemini-code-api');
+
+  const transformStream = createClaudeStreamTransformer(geminiModel, { emitPrelude: true });
+  
+  return new Response(response.body?.pipeThrough(transformStream), {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'x-powered-by': 'gemini-code-api'
+    }
+  });
+}
 
 /**
  * 创建消息路由
@@ -21,24 +246,67 @@ export function createMessagesRoute(): Hono {
    * Claude消息API兼容端点
    */
   app.post('/', async (c: Context) => {
-    const logger = getLogger(c);
+    const logger = new Logger();
 
     try {
       logger.info('Claude messages request');
 
       // 认证
-      const detectionResult = detectClientType(c.req.raw);
-      const authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+      let detectionResult;
+      let authResult;
       
-      if (!authResult.hasValidKeys) {
-        throwError.authentication(authResult.recommendation || 'Valid Gemini API keys required');
+      try {
+        logger.debug('Starting client type detection');
+        detectionResult = detectClientType(c.req.raw);
+        logger.debug('Client type detected', { 
+          clientType: detectionResult.clientType, 
+          confidence: detectionResult.confidence,
+          reason: detectionResult.reason 
+        });
+        
+        logger.debug('Starting API key extraction and validation');
+        authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+        logger.debug('API key validation result', {
+          hasValidKeys: authResult.hasValidKeys,
+          totalKeys: authResult.extraction.totalKeys,
+          validKeysCount: authResult.validation.validKeys.length,
+          invalidKeysCount: authResult.validation.invalidKeys.length,
+          warnings: authResult.validation.warnings,
+          source: authResult.extraction.source
+        });
+      } catch (error) {
+        logger.error('Authentication detection failed', error instanceof Error ? error : new Error(String(error)), {
+          errorType: typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        throwError.authentication('Authentication failed. Please provide a valid Gemini API key starting with "AI".');
       }
+      
+      if (!authResult!.hasValidKeys) {
+        const errorMessage = authResult!.validation.warnings.length > 0 
+          ? authResult!.validation.warnings[0]
+          : authResult!.recommendation || 'Valid Gemini API key required. API key must start with "AI".';
+        logger.warn('Authentication failed - no valid keys', {
+          errorMessage,
+          warnings: authResult!.validation.warnings,
+          recommendation: authResult!.recommendation,
+          extraction: authResult!.extraction
+        });
+        throwError.authentication(errorMessage);
+      }
+      
+      logger.info('Authentication successful', {
+        validKeysCount: authResult!.validation.validKeys.length,
+        clientType: detectionResult!.clientType
+      });
 
       // 获取请求体
       const requestBody = await c.req.json().catch(() => ({}));
       logger.info('Request body parsed', { 
         model: requestBody.model, 
-        hasMessages: !!requestBody.messages 
+        hasMessages: !!requestBody.messages,
+        stream: requestBody.stream 
       });
 
       // 验证必需字段
@@ -46,9 +314,23 @@ export function createMessagesRoute(): Hono {
         throwError.validation('Fields "model" and "messages" are required');
       }
 
+      // 检查是否为流式请求
+      const isStreaming = requestBody.stream === true;
+      logger.info('Request type', { isStreaming });
+
       // 映射Claude模型到Gemini模型
       const geminiModel = MODEL_MAPPINGS[requestBody.model as keyof typeof MODEL_MAPPINGS] || 'gemini-2.5-flash';
       logger.info('Model mapping', { claudeModel: requestBody.model, geminiModel });
+
+      // 选择API密钥 - 确保安全访问
+      if (!authResult!.validation.validKeys || authResult!.validation.validKeys.length === 0) {
+        throwError.authentication('No valid API keys available');
+      }
+      
+      const selectedKey = authResult!.validation.validKeys[0];
+      if (!selectedKey) {
+        throwError.authentication('Selected API key is invalid');
+      }
 
       // 转换Claude格式的消息到Gemini格式
       const geminiRequest = {
@@ -58,14 +340,9 @@ export function createMessagesRoute(): Hono {
         })).filter((content: any) => content.parts[0].text) // 过滤空消息
       };
 
-      // 选择API密钥 - 确保安全访问
-      if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
-        throwError.authentication('No valid API keys available');
-      }
-      
-      const selectedKey = authResult.validation.validKeys[0];
-      if (!selectedKey) {
-        throwError.authentication('Selected API key is invalid');
+      // 如果是流式请求，调用流式处理
+      if (isStreaming) {
+        return await handleStreamingMessages(c, geminiModel, geminiRequest, selectedKey, logger);
       }
       
       // 构建Gemini API URL

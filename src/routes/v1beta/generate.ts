@@ -69,12 +69,54 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
     logger.info('Using direct proxy to Gemini API...');
     
     // 认证
-    const detectionResult = detectClientType(c.req.raw);
-    const authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
-    
-    if (!authResult.hasValidKeys) {
-      throwError.authentication(authResult.recommendation || 'Valid Gemini API keys required');
-    }
+      let detectionResult;
+      let authResult;
+      
+      try {
+        logger.debug('Starting client type detection');
+        detectionResult = detectClientType(c.req.raw);
+        logger.debug('Client type detected', { 
+          clientType: detectionResult.clientType, 
+          confidence: detectionResult.confidence,
+          reason: detectionResult.reason 
+        });
+        
+        logger.debug('Starting API key extraction and validation');
+        authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+        logger.debug('API key validation result', {
+          hasValidKeys: authResult.hasValidKeys,
+          totalKeys: authResult.extraction.totalKeys,
+          validKeysCount: authResult.validation.validKeys.length,
+          invalidKeysCount: authResult.validation.invalidKeys.length,
+          warnings: authResult.validation.warnings,
+          source: authResult.extraction.source
+        });
+      } catch (error) {
+        logger.error('Authentication detection failed', error instanceof Error ? error : new Error(String(error)), {
+          errorType: typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        throwError.authentication('Authentication failed. Please provide a valid Gemini API key starting with "AI".');
+      }
+      
+      if (!authResult!.hasValidKeys) {
+        const errorMessage = authResult!.validation.warnings.length > 0 
+          ? authResult!.validation.warnings[0]
+          : authResult!.recommendation || 'Valid Gemini API key required. API key must start with "AI".';
+        logger.warn('Authentication failed - no valid keys', {
+          errorMessage,
+          warnings: authResult!.validation.warnings,
+          recommendation: authResult!.recommendation,
+          extraction: authResult!.extraction
+        });
+        throwError.authentication(errorMessage);
+      }
+      
+      logger.info('Authentication successful', {
+        validKeysCount: authResult!.validation.validKeys.length,
+        clientType: detectionResult!.clientType
+      });
 
     // 获取请求体
     const requestBody = await c.req.json().catch(() => ({}));
@@ -85,26 +127,58 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
+    // 处理思考配置 - 默认启用思考功能
+    if (requestBody.generationConfig) {
+      const maxTokens = requestBody.generationConfig.maxOutputTokens || 8192;
+      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
+      
+      // 添加思考配置
+      requestBody.generationConfig.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: thinkingBudget
+      };
+      
+      logger.info('Added thinking config', { 
+        maxTokens, 
+        thinkingBudget,
+        includeThoughts: true 
+      });
+    } else {
+      // 如果没有generationConfig，创建一个包含思考配置的
+      requestBody.generationConfig = {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 8192
+        }
+      };
+      
+      logger.info('Created generation config with thinking', { 
+        thinkingBudget: 8192,
+        includeThoughts: true 
+      });
+    }
+
     // 选择API密钥 - 确保安全访问
-    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+    if (!authResult!.validation.validKeys || authResult!.validation.validKeys.length === 0) {
       throwError.authentication('No valid API keys available');
     }
 
-    const selectedKey = authResult.validation.validKeys[0];
+    const selectedKey = authResult!.validation.validKeys[0];
     if (!selectedKey) {
       throwError.authentication('Selected API key is invalid');
     }
     
     // 构建Gemini API URL
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${selectedKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     
-    logger.info('Calling Gemini API directly', { model, url: geminiUrl.replace(selectedKey, '***') });
+    logger.info('Calling Gemini API directly', { model, url: geminiUrl });
 
     // 直接调用Gemini API
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': selectedKey,
         'User-Agent': 'gemini-code-api/2.0.0',
       },
       body: JSON.stringify(requestBody),
@@ -142,11 +216,22 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
     logger.info('Using direct proxy to Gemini API for streaming...');
     
     // 认证
-    const detectionResult = detectClientType(c.req.raw);
-    const authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+    let detectionResult;
+    let authResult;
     
-    if (!authResult.hasValidKeys) {
-      throwError.authentication(authResult.recommendation || 'Valid Gemini API keys required');
+    try {
+       detectionResult = detectClientType(c.req.raw);
+       authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+     } catch (error) {
+       logger.error('Authentication detection failed', error instanceof Error ? error : new Error(String(error)));
+        throwError.authentication('Authentication failed. Please provide a valid Gemini API key starting with "AI".');
+     }
+    
+    if (!authResult!.hasValidKeys) {
+      const errorMessage = authResult!.validation.warnings.length > 0 
+        ? authResult!.validation.warnings[0]
+        : authResult!.recommendation || 'Valid Gemini API key required. API key must start with "AI".';
+      throwError.authentication(errorMessage);
     }
 
     // 获取请求体
@@ -158,26 +243,59 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
+    // 处理思考配置 - 默认启用思考功能
+    if (requestBody.generationConfig) {
+      const maxTokens = requestBody.generationConfig.maxOutputTokens || 8192;
+      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
+      
+      // 添加思考配置
+      requestBody.generationConfig.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: thinkingBudget
+      };
+      
+      logger.info('Added thinking config for streaming', { 
+        maxTokens, 
+        thinkingBudget,
+        includeThoughts: true 
+      });
+    } else {
+      // 如果没有generationConfig，创建一个包含思考配置的
+      requestBody.generationConfig = {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 8192
+        }
+      };
+      
+      logger.info('Created generation config with thinking for streaming', { 
+        thinkingBudget: 8192,
+        includeThoughts: true 
+      });
+    }
+
     // 选择API密钥 - 确保安全访问
-    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+    if (!authResult!.validation.validKeys || authResult!.validation.validKeys.length === 0) {
       throwError.authentication('No valid API keys available');
     }
 
-    const selectedKey = authResult.validation.validKeys[0];
+    const selectedKey = authResult!.validation.validKeys[0];
     if (!selectedKey) {
       throwError.authentication('Selected API key is invalid');
     }
     
     // 构建Gemini API URL
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${selectedKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
     
-    logger.info('Calling Gemini streaming API directly', { model, url: geminiUrl.replace(selectedKey, '***') });
+    logger.info('Calling Gemini streaming API directly', { model, url: geminiUrl });
 
     // 直接调用Gemini流式API
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'x-goog-api-key': selectedKey,
         'User-Agent': 'gemini-code-api/2.0.0',
       },
       body: JSON.stringify(requestBody),
@@ -195,9 +313,10 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
     logger.info(`Gemini streaming API call successful: ${response.status}`);
 
     // 设置流式响应头
-    c.header('Content-Type', 'application/json');
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
     c.header('x-powered-by', 'gemini-code-api');
-    c.header('Transfer-Encoding', 'chunked');
 
     // 直接转发流式响应
     return new Response(response.body, {
@@ -218,15 +337,25 @@ async function handleEmbedContent(c: Context, model: string, logger: any): Promi
   try {
     logger.info(`Gemini embedContent request for model: ${model}`);
 
-    // 1. 检测客户端类型
-    const detectionResult = detectClientType(c.req.raw);
-    c.set('clientType', detectionResult.clientType);
-
-    // 2. 提取和验证API密钥
-    const authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+    // 1. 检测客户端类型和验证API密钥
+    let detectionResult;
+    let authResult;
     
-    if (!authResult.hasValidKeys) {
-      throwError.authentication('Valid Gemini API keys required');
+    try {
+       detectionResult = detectClientType(c.req.raw);
+       authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+     } catch (error) {
+       logger.error('Authentication detection failed', error instanceof Error ? error : new Error(String(error)));
+        throwError.authentication('Authentication failed. Please provide a valid Gemini API key starting with "AI".');
+     }
+    
+    c.set('clientType', detectionResult!.clientType);
+    
+    if (!authResult!.hasValidKeys) {
+      const errorMessage = authResult!.validation.warnings.length > 0 
+        ? authResult!.validation.warnings[0]
+        : authResult!.recommendation || 'Valid Gemini API key required. API key must start with "AI".';
+      throwError.authentication(errorMessage);
     }
 
     // 3. 获取请求参数并验证
@@ -239,15 +368,15 @@ async function handleEmbedContent(c: Context, model: string, logger: any): Promi
 
     // 4. 直接调用Gemini嵌入API（原生透传）
     // 选择API密钥 - 确保安全访问
-    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+    if (!authResult!.validation.validKeys || authResult!.validation.validKeys.length === 0) {
       throwError.authentication('No valid API keys available');
     }
 
-    const selectedKey = authResult.validation.validKeys[0]; // 嵌入请求使用第一个可用密钥
+    const selectedKey = authResult!.validation.validKeys[0]; // 嵌入请求使用第一个可用密钥
     if (!selectedKey) {
       throwError.authentication('Selected API key is invalid');
     }
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${selectedKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`;
 
     logger.info('Calling Gemini embedContent API', { model });
 
@@ -255,6 +384,7 @@ async function handleEmbedContent(c: Context, model: string, logger: any): Promi
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': selectedKey,
         'User-Agent': 'gemini-code-api/2.0.0',
       },
       body: JSON.stringify(requestBody),

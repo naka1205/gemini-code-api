@@ -320,6 +320,15 @@ export class ClaudeTransformer {
       config.stopSequences = request.stop_sequences;
     }
 
+    // 添加思考配置 - 默认启用思考功能
+    const maxTokens = request.max_tokens || 8192;
+    const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
+    
+    config.thinkingConfig = {
+      includeThoughts: true,
+      thinkingBudget: thinkingBudget
+    };
+
     return config;
   }
 

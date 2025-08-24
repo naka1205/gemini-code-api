@@ -27,13 +27,64 @@ export function createEmbeddingsRoute(): Hono {
       logger.info('OpenAI embeddings request');
 
       // 认证
-      const detectionResult = detectClientType(c.req.raw);
-      const authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+      let detectionResult;
+      let authResult;
       
-      if (!authResult.hasValidKeys) {
-        throwError.authentication(authResult.recommendation || 'Valid Gemini API keys required');
+      try {
+        logger.debug('Starting client type detection');
+        detectionResult = detectClientType(c.req.raw);
+        logger.debug('Client type detected', { 
+          clientType: detectionResult.clientType, 
+          confidence: detectionResult.confidence,
+          reason: detectionResult.reason 
+        });
+        
+        logger.debug('Starting API key extraction and validation');
+        authResult = extractAndValidateApiKeys(c.req.raw, detectionResult);
+        logger.debug('API key validation result', {
+          hasValidKeys: authResult.hasValidKeys,
+          totalKeys: authResult.extraction.totalKeys,
+          validKeysCount: authResult.validation.validKeys.length,
+          invalidKeysCount: authResult.validation.invalidKeys.length,
+          warnings: authResult.validation.warnings,
+          source: authResult.extraction.source
+        });
+      } catch (error) {
+        logger.error('Authentication detection failed', error instanceof Error ? error : new Error(String(error)), {
+          errorType: typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        throwError.authentication('Authentication failed. Please provide a valid Gemini API key starting with "AI".');
+      }
+      
+      // 设置客户端类型
+      c.set('clientType', detectionResult!.clientType);
+
+      if (!authResult!.hasValidKeys) {
+        logger.warn('Authentication failed - no valid keys', {
+          warnings: authResult!.validation.warnings,
+          recommendation: authResult!.recommendation,
+          extraction: authResult!.extraction
+        });
+        const errorMessage = authResult!.validation.warnings.length > 0 
+          ? authResult!.validation.warnings[0]
+          : authResult!.recommendation || 'Valid Gemini API key required. API key must start with "AI".';
+        throwError.authentication(errorMessage);
+      }
+      
+      logger.info('Authentication successful', {
+        validKeysCount: authResult!.validation.validKeys.length,
+        clientType: detectionResult!.clientType
+      });
+
+      // 验证是否有有效的API密钥
+      if (!authResult!.validation.validKeys || authResult!.validation.validKeys.length === 0) {
+        throwError.authentication('No valid API keys found. Please provide a valid Gemini API key starting with "AI".');
       }
 
+      const selectedKey = authResult!.validation.validKeys[0];
+      
       // 获取请求体
       const requestBody = await c.req.json().catch(() => ({}));
       logger.info('Request body parsed', { 
@@ -55,13 +106,6 @@ export function createEmbeddingsRoute(): Hono {
       
       // 准备结果数组
       const embeddings = [];
-      
-      // 选择API密钥 - 确保安全访问
-      if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
-        throwError.authentication('No valid API keys available');
-      }
-      
-      const selectedKey = authResult.validation.validKeys[0];
       if (!selectedKey) {
         throwError.authentication('Selected API key is invalid');
       }

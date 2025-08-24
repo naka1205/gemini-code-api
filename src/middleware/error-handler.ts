@@ -108,7 +108,7 @@ export function errorHandler() {
     try {
       await next();
     } catch (error) {
-      await handleError(error, c);
+      return await handleError(error, c);
     }
   };
 }
@@ -116,7 +116,7 @@ export function errorHandler() {
 /**
  * 处理错误
  */
-async function handleError(error: unknown, c: Context): Promise<Response> {
+export async function handleError(error: unknown, c: Context): Promise<Response> {
   const logger = getLogger(c);
   const requestId = c.get('requestId') || 'unknown';
 

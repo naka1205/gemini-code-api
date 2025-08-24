@@ -37,6 +37,7 @@ export interface OpenAIChatRequest {
   function_call?: any;
   tools?: any[];
   tool_choice?: any;
+  reasoning_effort?: 'low' | 'medium' | 'high';
 }
 
 /**
@@ -309,7 +310,33 @@ export class OpenAITransformer {
       config.stopSequences = Array.isArray(request.stop) ? request.stop : [request.stop];
     }
 
+    // 添加思考配置支持
+    if (request.reasoning_effort) {
+      config.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: this.mapReasoningEffortToBudget(request.reasoning_effort, request.max_tokens)
+      };
+    }
+
     return config;
+  }
+
+  /**
+   * 将reasoning_effort映射为thinkingBudget
+   */
+  private static mapReasoningEffortToBudget(effort: string, maxTokens?: number): number {
+    const baseTokens = maxTokens || 4096;
+    
+    switch (effort) {
+      case 'low':
+        return Math.min(baseTokens * 0.5, 2048);
+      case 'medium':
+        return Math.min(baseTokens * 1.0, 8192);
+      case 'high':
+        return Math.min(baseTokens * 2.0, 16384);
+      default:
+        return Math.min(baseTokens * 1.0, 8192);
+    }
   }
 
   /**

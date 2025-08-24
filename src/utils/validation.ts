@@ -8,23 +8,25 @@ import { AUTH_CONFIG } from './constants.js';
 
 /**
  * 验证API密钥格式
+ * 简化验证：只检查是否以'AI'开头
  */
 export function validateApiKey(apiKey: string): { valid: boolean; error?: string } {
   if (!apiKey || typeof apiKey !== 'string') {
     return { valid: false, error: 'API key is required and must be a string' };
   }
 
-  if (apiKey.length < AUTH_CONFIG.MIN_API_KEY_LENGTH) {
-    return { valid: false, error: `API key too short (minimum ${AUTH_CONFIG.MIN_API_KEY_LENGTH} characters)` };
+  const trimmedKey = apiKey.trim();
+  if (!trimmedKey) {
+    return { valid: false, error: 'API key cannot be empty' };
   }
 
-  if (apiKey.length > AUTH_CONFIG.MAX_API_KEY_LENGTH) {
-    return { valid: false, error: `API key too long (maximum ${AUTH_CONFIG.MAX_API_KEY_LENGTH} characters)` };
+  if (trimmedKey.length < 3) {
+    return { valid: false, error: 'API key is too short' };
   }
 
-  // Gemini API 密钥通常以 AIza 开头
-  if (!apiKey.startsWith('AIza') && !apiKey.match(/^[A-Za-z0-9_-]+$/)) {
-    return { valid: false, error: 'Invalid API key format. Expected Gemini API key.' };
+  // 简化验证：只检查是否以'AI'开头
+  if (!trimmedKey.startsWith('AI')) {
+    return { valid: false, error: 'API key must start with "AI"' };
   }
 
   return { valid: true };
