@@ -4,9 +4,9 @@
  */
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { ErrorType } from '@/types';
+import { ErrorType } from '../types/index.js';
 export { ErrorType }; // 重新导出ErrorType
-import { ERROR_MESSAGES } from '@/utils/constants.js';
+import { ERROR_MESSAGES } from '../utils/constants.js';
 import { getLogger } from './logger.js';
 
 /**

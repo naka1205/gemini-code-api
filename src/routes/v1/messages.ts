@@ -4,11 +4,11 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { detectClientType } from '@/middleware/auth/detector.js';
-import { extractAndValidateApiKeys } from '@/middleware/auth/extractor.js';
-import { throwError } from '@/middleware/error-handler.js';
-import { getLogger } from '@/middleware/logger.js';
-import { MODEL_MAPPINGS } from '@/utils/constants.js';
+import { detectClientType } from '../../middleware/auth/detector.js';
+import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
+import { throwError } from '../../middleware/error-handler.js';
+import { getLogger } from '../../middleware/logger.js';
+import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
 /**
  * 创建消息路由
@@ -58,8 +58,15 @@ export function createMessagesRoute(): Hono {
         })).filter((content: any) => content.parts[0].text) // 过滤空消息
       };
 
-      // 选择API密钥
+      // 选择API密钥 - 确保安全访问
+      if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+        throwError.authentication('No valid API keys available');
+      }
+      
       const selectedKey = authResult.validation.validKeys[0];
+      if (!selectedKey) {
+        throwError.authentication('Selected API key is invalid');
+      }
       
       // 构建Gemini API URL
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${selectedKey}`;

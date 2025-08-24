@@ -2,8 +2,8 @@
  * API KEY验证器
  * 纯代理模式 - 验证客户端提交的Gemini API KEY格式和有效性
  */
-import type { ClientType } from '@/types';
-import { AUTH_CONFIG } from '@/utils/constants.js';
+import type { ClientType } from '../../types/index.js';
+import { AUTH_CONFIG } from '../../utils/constants.js';
 
 /**
  * API KEY验证结果
@@ -106,21 +106,21 @@ export class ApiKeyValidator {
   }
 
   /**
-   * 检查API KEY是否可能是Gemini格式
+   * 检查API KEY是否可能是Gemini格式 (更宽松的检查)
    */
   isLikelyGeminiKey(apiKey: string): boolean {
-    // Gemini API Keys 通常以 "AIza" 开头
-    if (apiKey.startsWith('AIza')) {
-      return true;
+    // 基础检查
+    if (!apiKey || apiKey.length < 10) {
+      return false;
     }
 
-    // 检查长度和字符集（Gemini keys通常是39字符的base64字符串）
-    if (apiKey.length >= 35 && apiKey.length <= 45) {
-      const base64Pattern = /^[A-Za-z0-9+/=_-]+$/;
-      return base64Pattern.test(apiKey);
+    // 明显不是Gemini的格式
+    if (apiKey.startsWith('sk-') || apiKey.startsWith('claude-')) {
+      return false;
     }
 
-    return false;
+    // 其他情况都认为可能是有效的
+    return true;
   }
 
   /**
@@ -131,21 +131,27 @@ export class ApiKeyValidator {
   }
 
   /**
-   * 检查KEY是否在黑名单中
+   * 检查KEY是否在黑名单中 (更宽松的检查)
    */
   isBlacklisted(apiKey: string): boolean {
     const blacklistedPrefixes = [
       'test',
-      'demo',
+      'demo', 
       'example',
       'placeholder',
       'your-api-key',
-      'sk-',  // OpenAI格式，应该转换为Gemini
-      'claude-',  // Claude格式，应该转换为Gemini
+      'your_api_key',
+      'fake',
     ];
 
     const lowerKey = apiKey.toLowerCase();
-    return blacklistedPrefixes.some(prefix => lowerKey.startsWith(prefix));
+    
+    // 只检查完全匹配或明显的测试键值
+    return blacklistedPrefixes.some(prefix => 
+      lowerKey === prefix || 
+      lowerKey === prefix + '-key' ||
+      lowerKey.startsWith(prefix + '-') && lowerKey.length < 20
+    );
   }
 
   /**
@@ -230,32 +236,39 @@ export class ApiKeyValidator {
   }
 
   private validateGeminiFormat(apiKey: string): ValidationResult {
-    // 检查是否可能是Gemini格式
-    if (!this.isLikelyGeminiKey(apiKey)) {
-      // 如果不像Gemini格式，检查是否是其他已知格式
-      if (apiKey.startsWith('sk-')) {
-        return {
-          isValid: false,
-          reason: 'openai_format_detected_need_gemini_key',
-        };
-      }
-
-      if (apiKey.startsWith('claude-') || apiKey.includes('claude')) {
-        return {
-          isValid: false,
-          reason: 'claude_format_detected_need_gemini_key',
-        };
-      }
-
+    // 更宽松的Gemini格式检查，优先兼容性
+    
+    // 只棒逐明显错误的格式
+    if (apiKey.startsWith('sk-')) {
       return {
         isValid: false,
-        reason: 'not_gemini_format',
+        reason: 'openai_format_detected_need_gemini_key',
       };
     }
 
+    if (apiKey.startsWith('claude-') || (apiKey.includes('claude') && apiKey.length < 50)) {
+      return {
+        isValid: false,
+        reason: 'claude_format_detected_need_gemini_key',
+      };
+    }
+
+    // 检查低质量的测试key
+    const testKeys = ['test', 'demo', 'example', 'placeholder', 'your-api-key'];
+    const lowerKey = apiKey.toLowerCase();
+    for (const testKey of testKeys) {
+      if (lowerKey === testKey || lowerKey.startsWith(testKey + '-')) {
+        return {
+          isValid: false,
+          reason: 'test_or_placeholder_key',
+        };
+      }
+    }
+
+    // 其他情况下，只要符合基本要求就认为有效
     return {
       isValid: true,
-      reason: 'gemini_format_valid',
+      reason: 'basic_format_valid',
     };
   }
 }

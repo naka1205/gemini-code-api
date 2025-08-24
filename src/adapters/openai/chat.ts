@@ -2,12 +2,12 @@
  * OpenAI聊天完成适配器
  * 处理OpenAI /v1/chat/completions API兼容性
  */
-import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '@/adapters/base/adapter.js';
-import { RequestBodyValidator } from '@/adapters/base/validator.js';
-import { AdapterErrorHandler } from '@/adapters/base/errors.js';
+import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
+import { RequestBodyValidator } from '../base/validator.js';
+import { AdapterErrorHandler } from '../base/errors.js';
 import { OpenAITransformer, type OpenAIChatRequest } from './transformer.js';
-import { API_CONFIG } from '@/utils/constants.js';
-import { log } from '@/utils/logger.js';
+import { API_CONFIG } from '../../utils/constants.js';
+import { log } from '../../utils/logger.js';
 
 /**
  * OpenAI聊天完成适配器

@@ -9,9 +9,9 @@ import type {
   StreamRequestOptions,
   HttpError,
   RetryConfig 
-} from '@/types';
-import { HTTP_CONFIG } from '@/utils/constants.js';
-import { sleep } from '@/utils/helpers.js';
+} from '../../types/index.js';
+import { HTTP_CONFIG } from '../../utils/constants.js';
+import { sleep } from '../../utils/helpers.js';
 
 export class HttpClientImpl implements HttpClient {
   private retryConfig: RetryConfig;

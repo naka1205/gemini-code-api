@@ -2,7 +2,7 @@
  * TTL管理器
  * 专门处理缓存项的生存时间和自动过期
  */
-import { log } from '@/utils/logger.js';
+import { log } from '../../utils/logger.js';
 
 /**
  * TTL项接口

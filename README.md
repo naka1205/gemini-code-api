@@ -226,7 +226,7 @@ CREATE TABLE system_stats (
 name = "gemini-code-api"
 main = "dist/index.js"
 compatibility_date = "2024-12-01"
-node_compat = true
+compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
@@ -236,14 +236,6 @@ database_id = "your-database-id"  # 从步骤2获取
 [build]
 command = "npm run build"
 
-# 单一环境部署配置
-[dev]
-port = 8787
-local_protocol = "http"
-
-# 资源限制
-[limits]
-cpu_ms = 30000
 ```
 
 ### 4. 构建和部署
@@ -315,16 +307,18 @@ Authorization: Bearer AIzaSy...,AIzaSy...,AIzaSy...
 
 ```typescript
 // OpenAI -> Gemini
-'gpt-4' -> 'gemini-2.5-pro'
-'gpt-4o' -> 'gemini-2.5-pro'
-'gpt-3.5-turbo' -> 'gemini-2.5-flash'
+'gpt-5' -> 'gemini-2.5-pro'
+'gpt-4' -> 'gemini-2.0-flash'
+'gpt-4o' -> 'gemini-2.0-flash'
+'gpt-3.5-turbo' -> 'gemini-2.0-flash'
 
 // Claude -> Gemini
-'claude-3-5-sonnet-20241022' -> 'gemini-2.5-pro'
-'claude-3-5-haiku-20241022' -> 'gemini-2.5-flash'
-
-// 嵌入模型
-'text-embedding-ada-002' -> 'text-embedding-004'
+'claude-3-5-haiku-20241022' -> 'gemini-2.0-flash'
+'claude-3-5-sonnet-20241022' -> 'gemini-2.0-flash'
+'claude-3-7-sonnet-20250219' -> 'gemini-2.5-flash'
+'claude-sonnet-4-20250514' -> 'gemini-2.5-flash'
+'claude-opus-4-20250514' -> 'gemini-2.5-pro'
+'claude-opus-4-1-20250805' -> 'gemini-2.5-pro'
 ```
 
 ## 🔧 配置选项

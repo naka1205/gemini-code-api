@@ -2,9 +2,9 @@
  * 负载均衡健康检查
  * 纯代理模式 - 监控客户端提交KEY的健康状态
  */
-import type { KeyPerformanceMetrics, HealthCheckResult } from '@/types/services.js';
-import { LOAD_BALANCER_CONFIG, API_CONFIG } from '@/utils/constants.js';
-import { hashApiKey } from '@/utils/helpers.js';
+import type { KeyPerformanceMetrics, HealthCheckResult } from '../../types/services.js';
+import { LOAD_BALANCER_CONFIG, API_CONFIG } from '../../utils/constants.js';
+import { hashApiKey } from '../../utils/helpers.js';
 
 /**
  * API KEY健康检查器

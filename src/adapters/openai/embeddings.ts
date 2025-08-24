@@ -2,10 +2,10 @@
  * OpenAI嵌入适配器
  * 处理OpenAI /v1/embeddings API兼容性
  */
-import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '@/adapters/base/adapter.js';
-import { RequestBodyValidator } from '@/adapters/base/validator.js';
-import { AdapterErrorHandler } from '@/adapters/base/errors.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
+import { RequestBodyValidator } from '../base/validator.js';
+import { AdapterErrorHandler } from '../base/errors.js';
+import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * OpenAI嵌入请求格式

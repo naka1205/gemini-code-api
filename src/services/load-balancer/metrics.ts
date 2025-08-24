@@ -2,9 +2,9 @@
  * 负载均衡性能指标收集
  * 纯代理模式 - 仅内存统计，不持久化敏感信息
  */
-import type { KeyPerformanceMetrics, LoadBalancerStats } from '@/types/services.js';
-import { LOAD_BALANCER_CONFIG } from '@/utils/constants.js';
-import { hashApiKey } from '@/utils/helpers.js';
+import type { KeyPerformanceMetrics, LoadBalancerStats } from '../../types/services.js';
+import { LOAD_BALANCER_CONFIG } from '../../utils/constants.js';
+import { hashApiKey } from '../../utils/helpers.js';
 
 /**
  * 性能指标收集器

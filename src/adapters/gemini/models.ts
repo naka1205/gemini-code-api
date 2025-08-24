@@ -48,8 +48,8 @@ export const GEMINI_MODELS: GeminiModel[] = [
     topK: 40,
   },
   {
-    name: 'gemini-pro',
-    displayName: 'Gemini Pro',
+    name: 'gemini-2.0-flash',
+    displayName: 'Gemini 2.0 Flash',
     description: 'Previous generation capable model',
     version: '1.0',
     inputTokenLimit: 32768,
@@ -58,43 +58,7 @@ export const GEMINI_MODELS: GeminiModel[] = [
     temperature: 0.9,
     topP: 1.0,
     topK: 32,
-  },
-  {
-    name: 'gemini-pro-vision',
-    displayName: 'Gemini Pro Vision',
-    description: 'Multimodal model that can process images and text',
-    version: '1.0',
-    inputTokenLimit: 16384,
-    outputTokenLimit: 2048,
-    supportedGenerationMethods: ['generateContent'],
-    temperature: 0.4,
-    topP: 1.0,
-    topK: 32,
-  },
-  {
-    name: 'text-embedding-004',
-    displayName: 'Text Embedding 004',
-    description: 'Latest text embedding model',
-    version: '004',
-    inputTokenLimit: 2048,
-    outputTokenLimit: 768, // 嵌入维度
-    supportedGenerationMethods: ['embedContent'],
-    temperature: 0.0,
-    topP: 0.0,
-    topK: 0,
-  },
-  {
-    name: 'text-multilingual-embedding-002',
-    displayName: 'Multilingual Text Embedding 002',
-    description: 'Multilingual text embedding model',
-    version: '002',
-    inputTokenLimit: 2048,
-    outputTokenLimit: 768,
-    supportedGenerationMethods: ['embedContent'],
-    temperature: 0.0,
-    topP: 0.0,
-    topK: 0,
-  },
+  }
 ];
 
 /**

@@ -2,7 +2,7 @@
  * 增强的缓存管理器
  * 提供智能内存管理、自适应清理和性能监控
  */
-import { log } from '@/utils/logger.js';
+import { log } from '../../utils/logger.js';
 
 export interface AdvancedCacheConfig {
   maxSize: number;

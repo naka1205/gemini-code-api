@@ -2,7 +2,7 @@
  * 格式化工具函数
  * 错误响应和API格式转换
  */
-import type { ClientType, TokenUsage } from '@/types';
+import type { ClientType, TokenUsage } from '../types/index.js';
 import { ERROR_MESSAGES } from './constants.js';
 
 /**

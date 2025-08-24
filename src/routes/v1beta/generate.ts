@@ -4,10 +4,10 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { detectClientType } from '@/middleware/auth/detector.js';
-import { extractAndValidateApiKeys } from '@/middleware/auth/extractor.js';
-import { throwError } from '@/middleware/error-handler.js';
-import { getLogger } from '@/middleware/logger.js';
+import { detectClientType } from '../../middleware/auth/detector.js';
+import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
+import { throwError } from '../../middleware/error-handler.js';
+import { getLogger } from '../../middleware/logger.js';
 
 /**
  * 创建Gemini生成内容路由
@@ -85,8 +85,15 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
-    // 选择API密钥（简单轮询）
+    // 选择API密钥 - 确保安全访问
+    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+      throwError.authentication('No valid API keys available');
+    }
+
     const selectedKey = authResult.validation.validKeys[0];
+    if (!selectedKey) {
+      throwError.authentication('Selected API key is invalid');
+    }
     
     // 构建Gemini API URL
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${selectedKey}`;
@@ -151,8 +158,15 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
-    // 选择API密钥
+    // 选择API密钥 - 确保安全访问
+    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+      throwError.authentication('No valid API keys available');
+    }
+
     const selectedKey = authResult.validation.validKeys[0];
+    if (!selectedKey) {
+      throwError.authentication('Selected API key is invalid');
+    }
     
     // 构建Gemini API URL
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${selectedKey}`;
@@ -224,7 +238,15 @@ async function handleEmbedContent(c: Context, model: string, logger: any): Promi
     }
 
     // 4. 直接调用Gemini嵌入API（原生透传）
+    // 选择API密钥 - 确保安全访问
+    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+      throwError.authentication('No valid API keys available');
+    }
+
     const selectedKey = authResult.validation.validKeys[0]; // 嵌入请求使用第一个可用密钥
+    if (!selectedKey) {
+      throwError.authentication('Selected API key is invalid');
+    }
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${selectedKey}`;
 
     logger.info('Calling Gemini embedContent API', { model });

@@ -3,26 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# 纯代理模式 - 无环境变量配置
-# 系统不存储任何API KEY，完全依赖客户端提交
+# 调试模式配置
 
 [[d1_databases]]
 binding = "DB"
 database_name = "gemini-code"
-database_id = "761cb8da-9ccf-44ee-b5a1-880678b5d6c7"  # 部署时更新为实际ID
+database_id = "71b39975-72e6-4d64-89d2-0363f3e7d161"
 
 [build]
 command = "npm run build"
 
-# 单一环境部署配置
-[dev]
-port = 8787
-local_protocol = "http"
-
-# wrangler.toml (wrangler v3.88.0^)
 [observability.logs]
 enabled = true
-
-# 资源限制
-# [limits]
-# cpu_ms = 30000

@@ -2,9 +2,9 @@
  * 基础验证器
  * 提供通用的请求验证功能
  */
-import type { ClientType } from '@/types';
-import { throwError, ValidationError } from '@/middleware/error-handler.js';
-import { SYSTEM_LIMITS } from '@/utils/constants.js';
+import type { ClientType } from '../../types/index.js';
+import { throwError, ValidationError } from '../../middleware/error-handler.js';
+import { SYSTEM_LIMITS } from '../../utils/constants.js';
 
 /**
  * 验证规则接口

@@ -2,8 +2,8 @@
  * HTTP重试逻辑
  * 智能重试策略和指数退避算法
  */
-import type { HttpError } from '@/types';
-import { sleep } from '@/utils/helpers.js';
+import type { HttpError } from '../../types/index.js';
+import { sleep } from '../../utils/helpers.js';
 
 /**
  * 重试策略配置

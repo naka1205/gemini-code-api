@@ -2,9 +2,9 @@
  * Claude流式响应处理器
  * 专门处理Claude格式的流式响应转换和事件生成
  */
-import type { AdapterContext } from '@/adapters/base/adapter.js';
+import type { AdapterContext } from '../base/adapter.js';
 import type { ClaudeStreamEvent, ClaudeResponse } from './transformer.js';
-import { log } from '@/utils/logger.js';
+import { log } from '../../utils/logger.js';
 
 /**
  * Claude流式响应管理器

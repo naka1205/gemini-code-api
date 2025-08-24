@@ -3,7 +3,7 @@
  * 纯代理模式的API KEY和请求验证
  */
 import { z } from 'zod';
-import type { ClientType } from '@/types';
+import type { ClientType } from '../types/index.js';
 import { AUTH_CONFIG } from './constants.js';
 
 /**

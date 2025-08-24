@@ -18,8 +18,8 @@ import {
   type ErrorLog,
   type NewErrorLog
 } from './schema.js';
-import type { ClientType, DatabaseResult, QueryOptions } from '@/types';
-import { generateId, hashApiKey } from '@/utils';
+import type { ClientType, DatabaseResult, QueryOptions } from '../types/index.js';
+import { generateId, hashApiKey } from '../utils/index.js';
 
 export class DatabaseOperations {
   constructor(private db: DrizzleD1Database) {}

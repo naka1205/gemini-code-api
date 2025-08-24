@@ -4,8 +4,8 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { getLogger } from '@/middleware/logger.js';
-import { MODEL_MAPPINGS } from '@/utils/constants.js';
+import { getLogger } from '../../middleware/logger.js';
+import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
 /**
  * 创建模型路由

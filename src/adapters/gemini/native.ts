@@ -2,11 +2,11 @@
  * Gemini原生适配器
  * 最简单的适配器，直接透传Gemini API请求
  */
-import { log } from '@/utils/logger.js';
-import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '@/adapters/base/adapter.js';
-import { RequestBodyValidator } from '@/adapters/base/validator.js';
-import { AdapterErrorHandler } from '@/adapters/base/errors.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import { log } from '../../utils/logger.js';
+import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
+import { RequestBodyValidator } from '../base/validator.js';
+import { AdapterErrorHandler } from '../base/errors.js';
+import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * Gemini原生适配器类

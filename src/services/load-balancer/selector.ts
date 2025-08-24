@@ -2,10 +2,10 @@
  * 负载均衡选择器
  * 纯代理模式 - 智能选择客户端提交的最优API KEY
  */
-import type { LoadBalancerConfig, KeyPerformanceMetrics, LoadBalancerResult } from '@/types/services.js';
-import { LOAD_BALANCER_CONFIG } from '@/utils/constants.js';
-import { hashApiKey } from '@/utils/helpers.js';
-import { log } from '@/utils/logger.js';
+import type { LoadBalancerConfig, KeyPerformanceMetrics, LoadBalancerResult } from '../../types/services.js';
+import { LOAD_BALANCER_CONFIG } from '../../utils/constants.js';
+import { hashApiKey } from '../../utils/helpers.js';
+import { log } from '../../utils/logger.js';
 import { perf } from './performance.js';
 
 /**

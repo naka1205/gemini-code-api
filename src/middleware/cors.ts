@@ -3,7 +3,7 @@
  * 处理跨域请求和预检请求
  */
 import type { Context, Next } from 'hono';
-import { AUTH_CONFIG } from '@/utils/constants.js';
+import { AUTH_CONFIG } from '../utils/constants.js';
 
 /**
  * CORS配置选项

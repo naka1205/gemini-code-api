@@ -13,23 +13,23 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 
-// 中间件导入
-import { cors } from '@/middleware/cors.js';
-import { logger } from '@/middleware/logger.js';
-import { errorHandler } from '@/middleware/error-handler.js';
+// 中间件导入 - 使用相对路径
+import { cors } from './middleware/cors.js';
+import { logger } from './middleware/logger.js';
+import { errorHandler } from './middleware/error-handler.js';
 
-// 路由导入
-import { createHealthRoutes } from '@/routes/health.js';
-import { createChatCompletionsRoute } from '@/routes/v1/chat.js';
-import { createEmbeddingsRoute } from '@/routes/v1/embeddings.js';
-import { createModelsRoute } from '@/routes/v1/models.js';
-import { createMessagesRoute } from '@/routes/v1/messages.js';
-import { createGenerateContentRoute } from '@/routes/v1beta/generate.js';
-import { createGeminiModelsRoute } from '@/routes/v1beta/models.js';
+// 路由导入 - 使用相对路径
+import { createHealthRoutes } from './routes/health.js';
+import { createChatCompletionsRoute } from './routes/v1/chat.js';
+import { createEmbeddingsRoute } from './routes/v1/embeddings.js';
+import { createModelsRoute } from './routes/v1/models.js';
+import { createMessagesRoute } from './routes/v1/messages.js';
+import { createGenerateContentRoute } from './routes/v1beta/generate.js';
+import { createGeminiModelsRoute } from './routes/v1beta/models.js';
 
-// 工具导入
-import { flushLogs } from '@/middleware/logger.js';
-import { log } from '@/utils/logger.js';
+// 工具导入 - 使用相对路径
+import { flushLogs } from './middleware/logger.js';
+import { log } from './utils/logger.js';
 
 /**
  * 应用版本信息
@@ -95,19 +95,19 @@ function createApp(): Hono {
       timestamp: new Date().toISOString(),
       endpoints: {
         health: '/health',
-        openai_compatible: {
-          chat_completions: '/v1/chat/completions',
+        openai: {
+          chat: '/v1/chat/completions',
           embeddings: '/v1/embeddings',
           models: '/v1/models',
         },
-        claude_compatible: {
+        claude: {
           messages: '/v1/messages',
         },
-        gemini_native: {
+        gemini: {
           models: '/v1beta/models',
-          generate_content: '/v1beta/models/{model}:generateContent',
-          stream_generate: '/v1beta/models/{model}:streamGenerateContent',
-          embed_content: '/v1beta/models/{model}:embedContent',
+          generate: '/v1beta/models/{model}:generateContent',
+          stream: '/v1beta/models/{model}:streamGenerateContent',
+          embed: '/v1beta/models/{model}:embedContent',
         },
       },
       usage: {
@@ -118,7 +118,7 @@ function createApp(): Hono {
           claude: 'x-api-key: your_gemini_key1,your_gemini_key2',
           gemini: 'x-goog-api-key: your_gemini_key1,your_gemini_key2',
         },
-      },
+      }
     });
   });
 

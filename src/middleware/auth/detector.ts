@@ -2,7 +2,7 @@
  * 客户端类型检测器
  * 根据请求头和路径自动识别客户端类型（OpenAI、Claude、Gemini）
  */
-import type { ClientType } from '@/types';
+import type { ClientType } from '../../types/index.js';
 
 /**
  * 客户端检测结果

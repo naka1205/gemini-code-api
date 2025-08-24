@@ -37,9 +37,9 @@ export const MODEL_MAPPINGS = {
 
   // Claude -> Gemini
   'claude-opus-4-20250514': 'gemini-2.5-pro',
-  'claude-sonnet-4-20250514': 'gemini-2.5-pro',
-  'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
-  'claude-3-5-sonnet-20241022': 'gemini-2.5-flash',
+  'claude-sonnet-4-20250514': 'gemini-2.5-flash',
+  'claude-3-7-sonnet-20250219': 'gemini-2.0-flash',
+  'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
   'claude-3-5-haiku-20241022': 'gemini-2.0-flash',
 
   // 嵌入模型
@@ -62,7 +62,7 @@ export const CACHE_CONFIG = {
 export const AUTH_CONFIG = {
   ENABLE_API_KEY_VALIDATION: true,
   MAX_API_KEY_LENGTH: 200,
-  MIN_API_KEY_LENGTH: 20,
+  MIN_API_KEY_LENGTH: 10, // 降低最小长度以提高兼容性
   ENABLE_INPUT_SANITIZATION: true,
   ALLOWED_ORIGINS: ['*'],
   ENABLE_CORS_PROTECTION: false,

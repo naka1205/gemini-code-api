@@ -13,8 +13,10 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
     "db:create": "wrangler d1 create gemini-code",
-    "db:migrate": "wrangler d1 migrations apply gemini-code",
+    "db:migrate": "wrangler d1 migrations apply gemini-code --remote",
+    "db:migrate:local": "wrangler d1 migrations apply gemini-code --local",
     "db:reset": "wrangler d1 execute gemini-code --command='DROP TABLE IF EXISTS request_logs; DROP TABLE IF EXISTS api_key_metrics; DROP TABLE IF EXISTS system_stats;' && npm run db:migrate"
   },
   "keywords": [
@@ -29,15 +31,17 @@
   "author": "Gemini Code API Team",
   "license": "MIT",
   "dependencies": {
+    "drizzle-orm": "^0.33.0",
     "hono": "^4.9.2",
-    "zod": "^3.23.8",
-    "drizzle-orm": "^0.33.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "@cloudflare/workers-types": "^4.20241218.0",
+    "@types/node": "^22.0.0",
     "drizzle-kit": "^0.24.0",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.0",
+    "typescript-transform-paths": "^3.5.5",
     "vitest": "^2.0.0",
     "wrangler": "^4.31.0"
   },

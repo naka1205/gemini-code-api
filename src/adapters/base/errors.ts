@@ -2,8 +2,8 @@
  * 基础错误处理
  * 适配器层面的错误处理和转换
  */
-import { AppError, ErrorType, throwError } from '@/middleware/error-handler.js';
-import type { ClientType } from '@/types';
+import { AppError, ErrorType, throwError } from '../../middleware/error-handler.js';
+import type { ClientType } from '../../types/index.js';
 
 /**
  * Gemini API错误响应格式

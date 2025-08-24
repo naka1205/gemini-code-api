@@ -2,7 +2,7 @@
  * API KEY提取器
  * 纯代理模式 - 从请求头中提取客户端提交的多个Gemini API KEY
  */
-import type { ClientType } from '@/types';
+import type { ClientType } from '../../types/index.js';
 import type { ClientDetectionResult } from './detector.js';
 
 /**
@@ -190,23 +190,20 @@ export class ApiKeyExtractor {
   }
 
   private isValidGeminiKeyFormat(apiKey: string): boolean {
-    // 基础检查
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 20) {
+    // 基础检查 - 兼容性优先，只检查基本长度和类型
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
       return false;
     }
 
-    // Gemini API Keys 通常以 "AIza" 开头
-    if (apiKey.startsWith('AIza')) {
-      return true;
+    // 更宽松的验证，支持各种格式的API key
+    // 只要不是明显的错误格式就认为有效
+    if (apiKey.length > 200) {
+      return false; // 过长
     }
 
-    // 检查长度和字符集（Gemini keys通常是base64风格）
-    if (apiKey.length >= 35 && apiKey.length <= 45) {
-      const base64Pattern = /^[A-Za-z0-9+/=_-]+$/;
-      return base64Pattern.test(apiKey);
-    }
-
-    return false;
+    // 简单的字符集检查
+    const validPattern = /^[A-Za-z0-9+/=_.-]+$/;
+    return validPattern.test(apiKey);
   }
 
   private maskKey(apiKey: string): string {

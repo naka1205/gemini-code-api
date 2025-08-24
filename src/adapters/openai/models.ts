@@ -2,7 +2,7 @@
  * OpenAI模型兼容性映射
  * 提供OpenAI模型到Gemini模型的映射关系
  */
-import { MODEL_MAPPINGS } from '@/utils/constants.js';
+import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
 /**
  * OpenAI模型信息（兼容格式）

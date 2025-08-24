@@ -2,9 +2,9 @@
  * 内存缓存实现
  * 轻量级LRU缓存，支持TTL和自动清理
  */
-import type { CacheItem, CacheStats, CacheConfig } from '@/types';
-import { CACHE_CONFIG } from '@/utils/constants.js';
-import { log } from '@/utils/logger.js';
+import type { CacheItem, CacheStats, CacheConfig } from '../../types/index.js';
+import { CACHE_CONFIG } from '../../utils/constants.js';
+import { log } from '../../utils/logger.js';
 import { getGlobalCacheManager } from './manager.js';
 
 /**

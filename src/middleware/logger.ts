@@ -3,10 +3,10 @@
  * 记录请求和响应信息，支持数据库存储
  */
 import type { Context, Next } from 'hono';
-import { LogLevel } from '@/types';
-import { LOGGER_CONFIG } from '@/utils/constants.js';
-import { generateRequestId } from '@/utils/helpers.js';
-import { log } from '@/utils/logger.js';
+import { LogLevel } from '../types/index.js';
+import { LOGGER_CONFIG } from '../utils/constants.js';
+import { generateRequestId } from '../utils/helpers.js';
+import { log } from '../utils/logger.js';
 
 /**
  * 日志条目接口

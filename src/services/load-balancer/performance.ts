@@ -2,7 +2,7 @@
  * 性能监控指标系统
  * 收集、分析和报告系统性能数据
  */
-import { log } from '@/utils/logger.js';
+import { log } from '../../utils/logger.js';
 
 export interface PerformanceMetric {
   name: string;

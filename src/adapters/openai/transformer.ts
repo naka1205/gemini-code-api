@@ -2,10 +2,10 @@
  * OpenAI兼容适配器 - 转换器
  * 将OpenAI格式请求转换为Gemini格式，并将响应转换回OpenAI格式
  */
-import { log } from '@/utils/logger.js';
-import type { AdapterContext } from '@/adapters/base/adapter.js';
-import { AdapterErrorHandler } from '@/adapters/base/errors.js';
-import { MODEL_MAPPINGS } from '@/utils/constants.js';
+import { log } from '../../utils/logger.js';
+import type { AdapterContext } from '../base/adapter.js';
+import { AdapterErrorHandler } from '../base/errors.js';
+import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
 /**
  * OpenAI消息格式

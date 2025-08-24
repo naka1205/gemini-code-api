@@ -3,13 +3,13 @@
  * 定义所有协议适配器的通用接口和基础功能
  */
 import type { Context } from 'hono';
-import type { ClientType } from '@/types';
-import { getGlobalSelector } from '@/services/load-balancer/selector.js';
-import { getGlobalMetricsCollector } from '@/services/load-balancer/metrics.js';
-import { httpClient } from '@/services/http/client.js';
-import { throwError } from '@/middleware/error-handler.js';
-import { logApiMetrics } from '@/middleware/logger.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import type { ClientType } from '../../types/index.js';
+import { getGlobalSelector } from '../../services/load-balancer/selector.js';
+import { getGlobalMetricsCollector } from '../../services/load-balancer/metrics.js';
+import { httpClient } from '../../services/http/client.js';
+import { throwError } from '../../middleware/error-handler.js';
+import { logApiMetrics } from '../../middleware/logger.js';
+import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * 适配器请求上下文

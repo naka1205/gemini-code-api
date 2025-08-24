@@ -2,12 +2,12 @@
  * Claude消息适配器
  * 处理Claude /v1/messages API兼容性
  */
-import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '@/adapters/base/adapter.js';
-import { RequestBodyValidator } from '@/adapters/base/validator.js';
-import { AdapterErrorHandler } from '@/adapters/base/errors.js';
+import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
+import { RequestBodyValidator } from '../base/validator.js';
+import { AdapterErrorHandler } from '../base/errors.js';
 import { ClaudeTransformer, type ClaudeRequest } from './transformer.js';
 import { createClaudeStreamTransform } from './streaming.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * Claude消息适配器

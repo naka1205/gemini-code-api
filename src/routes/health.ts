@@ -4,8 +4,8 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { getGlobalMetricsCollector } from '@/services/load-balancer/metrics.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import { getGlobalMetricsCollector } from '../services/load-balancer/metrics.js';
+import { API_CONFIG } from '../utils/constants.js';
 
 /**
  * 系统健康状态

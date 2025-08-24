@@ -4,12 +4,12 @@
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { getAvailableModels, getModelByName } from '@/adapters/gemini/models.js';
-import { detectClientType } from '@/middleware/auth/detector.js';
-import { extractAndValidateApiKeys } from '@/middleware/auth/extractor.js';
-import { throwError } from '@/middleware/error-handler.js';
-import { getLogger } from '@/middleware/logger.js';
-import { API_CONFIG } from '@/utils/constants.js';
+import { getAvailableModels, getModelByName } from '../../adapters/gemini/models.js';
+import { detectClientType } from '../../middleware/auth/detector.js';
+import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
+import { throwError } from '../../middleware/error-handler.js';
+import { getLogger } from '../../middleware/logger.js';
+import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * 创建Gemini模型路由
@@ -135,8 +135,15 @@ async function fetchLiveModelsFromGemini(c: Context): Promise<any> {
       throwError.authentication('Valid Gemini API keys required to fetch live models');
     }
 
-    // 2. 使用第一个可用的API密钥调用Gemini API
+    // 2. 使用第一个可用的API密钥调用Gemini API - 确保安全访问
+    if (!authResult.validation.validKeys || authResult.validation.validKeys.length === 0) {
+      throwError.authentication('No valid API keys available');
+    }
+    
     const apiKey = authResult.validation.validKeys[0];
+    if (!apiKey) {
+      throwError.authentication('Selected API key is invalid');
+    }
     const geminiUrl = `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models?key=${apiKey}`;
 
     logger.info('Fetching live models from Gemini API');
