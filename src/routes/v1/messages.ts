@@ -37,6 +37,12 @@ function createClaudeStreamTransformer(
   let totalOutput = 0;
   let firstTokenAt = 0;
   let lineBuffer = '';
+  // 思考内容处理状态
+  let thinkingStarted = false;
+  let textStarted = false;
+  let lastThinkingText = '';
+  const partThinkingBuffers: Record<number, string> = {};
+  const pendingTextChunks: string[] = [];
 
   return new TransformStream<Uint8Array, Uint8Array>({
     start(controller) {
@@ -78,19 +84,91 @@ function createClaudeStreamTransformer(
         }
         try {
           const obj = JSON.parse(data);
-           if (obj?.usageMetadata?.candidatesTokenCount != null) totalOutput = obj.usageMetadata.candidatesTokenCount;
+          if (obj?.usageMetadata?.candidatesTokenCount != null) totalOutput = obj.usageMetadata.candidatesTokenCount;
           const cand = Array.isArray(obj?.candidates) ? obj.candidates[0] : undefined;
           const parts = cand?.content?.parts || [];
           
-          if (!firstTokenAt && parts?.some((p:any)=>p?.text)) {
+          // 处理候选级思考内容
+          const candThought: string | undefined = (cand as any)?.thought || (cand as any)?.thinking || (cand as any)?.internalThought;
+          const hasAnyPlainText = parts?.some((p:any)=>p?.text && p?.thought !== true);
+          if (!firstTokenAt && (hasAnyPlainText || (typeof candThought === 'string' && candThought.length > 0))) {
             firstTokenAt = Date.now();
+          }
+          
+          // 检查本事件是否包含思考增量
+          let hasThinkingDeltaInEvent = false;
+          
+          // 处理候选级思考
+          if (!textStarted && typeof candThought === 'string' && candThought.length > 0) {
+            const newSegment = candThought.slice(lastThinkingText.length);
+            if (newSegment.length > 0) {
+              if (!thinkingStarted) {
+                if (contentBlockOpen) {
+                  controller.enqueue(enc.encode(`event: content_block_stop\n`));
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+                  contentBlockIndex++;
+                }
+                const startBlock = { type: 'content_block_start', index: contentBlockIndex, content_block: { type: 'thinking', thinking: '' } };
+                controller.enqueue(enc.encode(`event: content_block_start\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
+                contentBlockOpen = true;
+                currentBlockType = 'thinking';
+                thinkingStarted = true;
+              }
+              const deltaEvt = { type: 'content_block_delta', index: contentBlockIndex, delta: { type: 'thinking_delta', thinking: newSegment } };
+              controller.enqueue(enc.encode(`event: content_block_delta\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(deltaEvt)}\n\n`));
+              lastThinkingText = candThought;
+              hasThinkingDeltaInEvent = true;
+            }
           }
           
           for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             
-            // Handle assistant text
-            if (part?.text) {
+            // 处理part级思考内容
+            let thinkingText: string | undefined;
+            if (part?.thought === true && typeof part?.text === 'string') {
+              thinkingText = part.text;
+            } else if (typeof part?.thinking === 'string') {
+              thinkingText = part.thinking;
+            } else if (typeof part?.internalThought === 'string') {
+              thinkingText = part.internalThought;
+            }
+            
+            if (!textStarted && typeof thinkingText === 'string' && thinkingText.length > 0) {
+              const prev = partThinkingBuffers[i] || '';
+              const newSeg = thinkingText.slice(prev.length);
+              if (newSeg.length > 0) {
+                if (!thinkingStarted) {
+                  if (contentBlockOpen) {
+                    controller.enqueue(enc.encode(`event: content_block_stop\n`));
+                    controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+                    contentBlockIndex++;
+                  }
+                  const startBlock = { type: 'content_block_start', index: contentBlockIndex, content_block: { type: 'thinking', thinking: '' } };
+                  controller.enqueue(enc.encode(`event: content_block_start\n`));
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
+                  contentBlockOpen = true;
+                  currentBlockType = 'thinking';
+                  thinkingStarted = true;
+                }
+                const deltaEvt = { type: 'content_block_delta', index: contentBlockIndex, delta: { type: 'thinking_delta', thinking: newSeg } };
+                controller.enqueue(enc.encode(`event: content_block_delta\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify(deltaEvt)}\n\n`));
+                partThinkingBuffers[i] = thinkingText;
+                hasThinkingDeltaInEvent = true;
+              }
+            }
+            
+            // 处理普通文本内容（忽略 thought===true 的文本）
+            if (part?.text && part?.thought !== true) {
+              // 如果本事件包含思考delta且文本尚未开始，则缓存文本到下一事件输出
+              if (!textStarted && hasThinkingDeltaInEvent) {
+                pendingTextChunks.push(part.text);
+                continue;
+              }
+              
               if (!contentBlockOpen || currentBlockType !== 'text') {
                 if (contentBlockOpen) {
                   controller.enqueue(enc.encode(`event: content_block_stop\n`));
@@ -105,7 +183,8 @@ function createClaudeStreamTransformer(
                 controller.enqueue(enc.encode(`event: content_block_start\n`));
                 controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
                 contentBlockOpen = true;
-                 currentBlockType = 'text';
+                currentBlockType = 'text';
+                textStarted = true;
               }
               const deltaEvt = { 
                 type: 'content_block_delta', 
@@ -157,6 +236,37 @@ function createClaudeStreamTransformer(
               contentBlockIndex++;
             }
           }
+          
+          // 如果没有思考增量且有缓存的文本块，输出它们
+          if (!hasThinkingDeltaInEvent && pendingTextChunks.length > 0) {
+            for (const textChunk of pendingTextChunks) {
+              if (!contentBlockOpen || currentBlockType !== 'text') {
+                if (contentBlockOpen) {
+                  controller.enqueue(enc.encode(`event: content_block_stop\n`));
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+                  contentBlockIndex++;
+                }
+                const startBlock = { 
+                  type: 'content_block_start', 
+                  index: contentBlockIndex, 
+                  content_block: { type: 'text', text: '' } 
+                };
+                controller.enqueue(enc.encode(`event: content_block_start\n`));
+                controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
+                contentBlockOpen = true;
+                currentBlockType = 'text';
+                textStarted = true;
+              }
+              const deltaEvt = { 
+                type: 'content_block_delta', 
+                index: contentBlockIndex, 
+                delta: { type: 'text_delta', text: textChunk } 
+              };
+              controller.enqueue(enc.encode(`event: content_block_delta\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(deltaEvt)}\n\n`));
+            }
+            pendingTextChunks.length = 0;
+          }
         } catch (e: any) {
           console.warn('Failed to parse Gemini streaming response:', e);
         }
@@ -164,6 +274,35 @@ function createClaudeStreamTransformer(
     },
     
     flush(controller) {
+      // 输出任何剩余的缓存文本块
+      if (pendingTextChunks.length > 0) {
+        for (const textChunk of pendingTextChunks) {
+          if (!contentBlockOpen || currentBlockType !== 'text') {
+            if (contentBlockOpen) {
+              controller.enqueue(enc.encode(`event: content_block_stop\n`));
+              controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
+              contentBlockIndex++;
+            }
+            const startBlock = { 
+              type: 'content_block_start', 
+              index: contentBlockIndex, 
+              content_block: { type: 'text', text: '' } 
+            };
+            controller.enqueue(enc.encode(`event: content_block_start\n`));
+            controller.enqueue(enc.encode(`data: ${JSON.stringify(startBlock)}\n\n`));
+            contentBlockOpen = true;
+            currentBlockType = 'text';
+          }
+          const deltaEvt = { 
+            type: 'content_block_delta', 
+            index: contentBlockIndex, 
+            delta: { type: 'text_delta', text: textChunk } 
+          };
+          controller.enqueue(enc.encode(`event: content_block_delta\n`));
+          controller.enqueue(enc.encode(`data: ${JSON.stringify(deltaEvt)}\n\n`));
+        }
+      }
+      
       if (contentBlockOpen) {
         controller.enqueue(enc.encode(`event: content_block_stop\n`));
         controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'content_block_stop', index: contentBlockIndex })}\n\n`));
@@ -194,6 +333,37 @@ async function handleStreamingMessages(
   selectedKey: string,
   logger: any
 ) {
+  // 添加思考配置 - 对于支持thinking的Gemini模型
+  if (geminiModel.includes('2.5') || geminiModel.includes('2.0')) {
+    if (geminiRequest.generationConfig) {
+      const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
+      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
+      
+      geminiRequest.generationConfig.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: thinkingBudget
+      };
+      
+      logger.info('Added thinking config for Claude streaming', { 
+        maxTokens, 
+        thinkingBudget,
+        includeThoughts: true 
+      });
+    } else {
+      geminiRequest.generationConfig = {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 8192
+        }
+      };
+      
+      logger.info('Created generation config with thinking for Claude streaming', { 
+        thinkingBudget: 8192,
+        includeThoughts: true 
+      });
+    }
+  }
+  
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${selectedKey}`;
   
   logger.info('Calling Gemini streaming API', { model: geminiModel, url: geminiUrl.replace(selectedKey, '***') });
@@ -332,13 +502,55 @@ export function createMessagesRoute(): Hono {
         throwError.authentication('Selected API key is invalid');
       }
 
-      // 转换Claude格式的消息到Gemini格式
-      const geminiRequest = {
-        contents: requestBody.messages.map((message: any) => ({
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: message.content || '' }]
-        })).filter((content: any) => content.parts[0].text) // 过滤空消息
+      // 使用ClaudeTransformer转换请求格式
+      const { ClaudeTransformer } = await import('../../adapters/claude/transformer.js');
+      const adapterContext = {
+        request: c.req.raw,
+        context: c,
+        clientType: detectionResult!.clientType,
+        apiKeys: authResult!.validation.validKeys,
+        requestId: generateUUID()
       };
+      const geminiRequest = ClaudeTransformer.transformRequest(requestBody, adapterContext);
+      
+      // 添加思考配置 - 对于支持thinking的Gemini模型
+      if (geminiModel.includes('2.5') || geminiModel.includes('2.0')) {
+        if (geminiRequest.generationConfig) {
+          const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
+          const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
+          
+          geminiRequest.generationConfig.thinkingConfig = {
+            includeThoughts: true,
+            thinkingBudget: thinkingBudget
+          };
+          
+          logger.info('Added thinking config for Claude interface', { 
+            maxTokens, 
+            thinkingBudget,
+            includeThoughts: true 
+          });
+        } else {
+          geminiRequest.generationConfig = {
+            thinkingConfig: {
+              includeThoughts: true,
+              thinkingBudget: 8192
+            }
+          };
+          
+          logger.info('Created generation config with thinking for Claude interface', { 
+            thinkingBudget: 8192,
+            includeThoughts: true 
+          });
+        }
+      }
+      
+      // 添加调试日志
+      if (c.req.header('x-debug-request')) {
+        logger.info('Debug: Transformed request', { 
+          original: requestBody, 
+          transformed: geminiRequest 
+        });
+      }
 
       // 如果是流式请求，调用流式处理
       if (isStreaming) {
@@ -373,13 +585,60 @@ export function createMessagesRoute(): Hono {
       logger.info(`Gemini API call successful: ${response.status}`);
 
       // 转换Gemini响应到Claude格式
+      const content: any[] = [];
+      
+      if (responseData.candidates && responseData.candidates[0]) {
+        const candidate = responseData.candidates[0];
+        const parts = candidate.content?.parts || [];
+        
+        // 处理候选级思考内容
+        const candThought = candidate.thought || candidate.thinking || candidate.internalThought;
+        if (typeof candThought === 'string' && candThought.length > 0) {
+          content.push({ type: 'thinking', thinking: candThought });
+        }
+        
+        // 处理part级思考内容和普通文本
+        let hasThinkingContent = false;
+        let textContent = '';
+        
+        for (const part of parts) {
+          // 检查是否为思考内容
+          let thinkingText: string | undefined;
+          if (part.thought === true && typeof part.text === 'string') {
+            thinkingText = part.text;
+          } else if (typeof part.thinking === 'string') {
+            thinkingText = part.thinking;
+          } else if (typeof part.internalThought === 'string') {
+            thinkingText = part.internalThought;
+          }
+          
+          if (thinkingText && !hasThinkingContent) {
+            content.push({ type: 'thinking', thinking: thinkingText });
+            hasThinkingContent = true;
+          } else if (part.text && part.thought !== true) {
+            // 普通文本内容（忽略 thought===true 的文本）
+            textContent += part.text;
+          }
+        }
+        
+        // 添加文本内容
+        if (textContent) {
+          content.push({ type: 'text', text: textContent });
+        }
+        
+        // 如果没有任何内容，添加默认文本
+        if (content.length === 0) {
+          content.push({ type: 'text', text: parts[0]?.text || 'Error: No response from Gemini API' });
+        }
+      } else {
+        content.push({ type: 'text', text: 'Error: No response from Gemini API' });
+      }
+      
       const claudeResponse = {
         id: responseData.responseId || 'msg_' + Date.now(),
         type: 'message',
         role: 'assistant',
-        content: responseData.candidates && responseData.candidates[0] ? 
-          [{ type: 'text', text: responseData.candidates[0].content?.parts?.[0]?.text || '' }] :
-          [{ type: 'text', text: 'Error: No response from Gemini API' }],
+        content: content,
         model: requestBody.model,
         stop_reason: responseData.candidates?.[0]?.finishReason === 'STOP' ? 'end_turn' :
                     responseData.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? 'max_tokens' : 'end_turn',

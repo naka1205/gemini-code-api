@@ -250,6 +250,11 @@ export class ClaudeTransformer {
             prependedSystem = true;
           }
 
+          // 确保用户内容不为空
+          if (!userContent.trim()) {
+            userContent = 'Hello'; // 提供默认内容
+          }
+
           contents.push({
             role: 'user',
             parts: [{ text: userContent }],
@@ -257,10 +262,14 @@ export class ClaudeTransformer {
           break;
 
         case 'assistant':
-          contents.push({
-            role: 'model',
-            parts: [{ text: this.extractTextContent(message.content) }],
-          });
+          const assistantContent = this.extractTextContent(message.content);
+          // 确保助手内容不为空
+          if (assistantContent.trim()) {
+            contents.push({
+              role: 'model',
+              parts: [{ text: assistantContent }],
+            });
+          }
           break;
       }
     }
@@ -270,6 +279,14 @@ export class ClaudeTransformer {
       contents.unshift({
         role: 'user',
         parts: [{ text: systemPrompt }],
+      });
+    }
+
+    // 确保至少有一个用户消息
+    if (contents.length === 0 || !contents.some(c => c.role === 'user')) {
+      contents.push({
+        role: 'user',
+        parts: [{ text: 'Hello' }],
       });
     }
 
@@ -319,15 +336,6 @@ export class ClaudeTransformer {
     if (request.stop_sequences !== undefined) {
       config.stopSequences = request.stop_sequences;
     }
-
-    // 添加思考配置 - 默认启用思考功能
-    const maxTokens = request.max_tokens || 8192;
-    const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
-    
-    config.thinkingConfig = {
-      includeThoughts: true,
-      thinkingBudget: thinkingBudget
-    };
 
     return config;
   }

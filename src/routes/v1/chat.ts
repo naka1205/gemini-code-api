@@ -108,12 +108,19 @@ export function createChatCompletionsRoute(): Hono {
       }
 
       // 转换OpenAI格式的消息到Gemini格式
-      const geminiRequest = {
+      const geminiRequest: any = {
         contents: requestBody.messages.map((message: any) => ({
           role: message.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: message.content || '' }]
         })).filter((content: any) => content.parts[0].text) // 过滤空消息
       };
+      
+      // 设置生成配置
+      if (requestBody.max_tokens) {
+        geminiRequest.generationConfig = {
+          maxOutputTokens: requestBody.max_tokens
+        };
+      }
 
       // 如果是流式请求，调用流式处理
       if (isStreaming) {
@@ -206,6 +213,13 @@ async function handleStreamingChatCompletion(
   logger: any
 ): Promise<Response> {
   try {
+    // 设置生成配置
+    if (requestBody.max_tokens) {
+      geminiRequest.generationConfig = {
+        maxOutputTokens: requestBody.max_tokens
+      };
+    }
+    
     // 构建Gemini流式API URL
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${selectedKey}`;
     
