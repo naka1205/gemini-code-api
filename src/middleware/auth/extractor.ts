@@ -134,6 +134,14 @@ export class ApiKeyExtractor {
     const recommendedHeader = this.getRecommendedHeader(clientType);
     const clientName = this.getClientTypeName(clientType);
 
+    if (clientType === 'claude') {
+      return `For ${clientName} compatibility, please provide your Gemini API key(s) using one of the following headers:\n` +
+             `• Recommended: x-api-key: YOUR_GEMINI_API_KEY\n` +
+             `• Alternative: Authorization: Bearer YOUR_GEMINI_API_KEY\n` +
+             `• Alternative: x-goog-api-key: YOUR_GEMINI_API_KEY\n` +
+             `Multiple keys can be separated by commas for load balancing.`;
+    }
+
     return `For ${clientName} compatibility, please provide your Gemini API key(s) using the ${recommendedHeader} header. Multiple keys can be separated by commas for load balancing.`;
   }
 
@@ -146,9 +154,39 @@ export class ApiKeyExtractor {
   }
 
   private extractFromClaudeHeaders(headers: Headers): ExtractionResult {
-    // Claude 使用 x-api-key
+    // Claude 优先使用 x-api-key
     const apiKeyHeader = headers.get('x-api-key');
-    return this.extractFromHeader(apiKeyHeader, 'x-api-key', 'claude');
+    if (apiKeyHeader) {
+      return this.extractFromHeader(apiKeyHeader, 'x-api-key', 'claude');
+    }
+
+    // 兼容性回退：如果没有 x-api-key，尝试其他头部
+    // 1. 尝试 Authorization Bearer 格式
+    const authHeader = headers.get('authorization');
+    if (authHeader) {
+      const result = this.extractFromHeader(authHeader, 'authorization', 'claude');
+      if (result.totalKeys > 0) {
+        return result;
+      }
+    }
+
+    // 2. 尝试 x-goog-api-key（Gemini格式）
+    const googleHeader = headers.get('x-goog-api-key');
+    if (googleHeader) {
+      const result = this.extractFromHeader(googleHeader, 'x-goog-api-key', 'claude');
+      if (result.totalKeys > 0) {
+        return result;
+      }
+    }
+
+    // 如果都没有找到，返回空结果但保持 claude 客户端类型
+    return {
+      apiKeys: [],
+      totalKeys: 0,
+      source: 'header_missing_with_fallback',
+      clientType: 'claude',
+      headerName: 'x-api-key',
+    };
   }
 
   private extractFromGeminiHeaders(headers: Headers): ExtractionResult {

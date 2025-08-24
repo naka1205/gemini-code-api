@@ -159,9 +159,21 @@ export class OpenAITransformer {
     };
 
     // 处理函数调用（如果有）
-    if (candidate.content.parts.some((part: any) => part.functionCall)) {
-      const functionCall = candidate.content.parts.find((part: any) => part.functionCall)?.functionCall;
-      if (functionCall) {
+    const functionCalls = candidate.content.parts.filter((part: any) => part.functionCall);
+    if (functionCalls.length > 0) {
+      // 处理现代的tool_calls格式
+      openaiResponse.choices[0].message.tool_calls = functionCalls.map((part: any) => ({
+        id: `call_${this.generateId()}`,
+        type: 'function',
+        function: {
+          name: part.functionCall.name,
+          arguments: JSON.stringify(part.functionCall.args || {}),
+        },
+      }));
+      
+      // 为了向后兼容，也设置legacy的function_call格式
+      if (functionCalls.length === 1) {
+        const functionCall = functionCalls[0].functionCall;
         openaiResponse.choices[0].message.function_call = {
           name: functionCall.name,
           arguments: JSON.stringify(functionCall.args || {}),

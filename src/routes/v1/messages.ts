@@ -334,7 +334,7 @@ async function handleStreamingMessages(
   logger: any
 ) {
   // 添加思考配置 - 对于支持thinking的Gemini模型
-  if (geminiModel.includes('2.5') || geminiModel.includes('2.0')) {
+  if (geminiModel.includes('2.5')) {
     if (geminiRequest.generationConfig) {
       const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
       const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
@@ -514,7 +514,7 @@ export function createMessagesRoute(): Hono {
       const geminiRequest = ClaudeTransformer.transformRequest(requestBody, adapterContext);
       
       // 添加思考配置 - 对于支持thinking的Gemini模型
-      if (geminiModel.includes('2.5') || geminiModel.includes('2.0')) {
+      if (geminiModel.includes('2.5')) {
         if (geminiRequest.generationConfig) {
           const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
           const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));

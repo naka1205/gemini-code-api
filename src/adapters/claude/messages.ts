@@ -50,7 +50,7 @@ export class ClaudeMessageAdapter extends BaseAdapter {
 
     if (body.stop_sequences !== undefined) {
       RequestBodyValidator.validateArrayLength(body.stop_sequences, 'stop_sequences', 0, 4);
-      body.stop_sequences.forEach((seq, index) => {
+      body.stop_sequences.forEach((seq: string, index: number) => {
         RequestBodyValidator.validateStringLength(seq, `stop_sequences[${index}]`, 1, 64);
       });
     }
@@ -164,7 +164,8 @@ export class ClaudeMessageAdapter extends BaseAdapter {
    */
   protected buildGeminiApiUrl(_request: any, context: AdapterContext): string {
     const model = context.context.get('geminiModel') || 'gemini-2.5-pro';
-    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/${model}:generateContent`;
+    // 【调试】尝试使用 v1 API 端点
+    return `${API_CONFIG.GEMINI_BASE_URL}/v1/models/${model}:generateContent`;
   }
 
   /**
@@ -172,7 +173,8 @@ export class ClaudeMessageAdapter extends BaseAdapter {
    */
   private buildStreamingUrl(_request: any, context: AdapterContext): string {
     const model = context.context.get('geminiModel') || 'gemini-2.5-pro';
-    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/${model}:streamGenerateContent`;
+    // 【调试】尝试使用 v1 API 端点
+    return `${API_CONFIG.GEMINI_BASE_URL}/v1/models/${model}:streamGenerateContent`;
   }
 
   /**

@@ -1,396 +1,259 @@
-/**
- * Claude兼容适配器 - 转换器
- * 将Claude格式请求转换为Gemini格式，并将响应转换回Claude格式
- */
-import { log } from '../../utils/logger.js';
 import type { AdapterContext } from '../base/adapter.js';
-import { AdapterErrorHandler } from '../base/errors.js';
 import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
-/**
- * Claude消息格式
- */
-export interface ClaudeMessage {
-  role: 'user' | 'assistant';
-  content: string | Array<{
-    type: 'text' | 'image';
-    text?: string;
-    source?: {
-      type: string;
-      media_type: string;
-      data: string;
-    };
-  }>;
-}
-
-/**
- * Claude请求格式
- */
+// 定义 Claude 原生请求体接口
 export interface ClaudeRequest {
   model: string;
-  max_tokens: number;
-  messages: ClaudeMessage[];
+  messages: { role: 'user' | 'assistant'; content: any }[];
   system?: string;
+  max_tokens: number;
+  stop_sequences?: string[];
+  stream?: boolean;
   temperature?: number;
   top_p?: number;
   top_k?: number;
-  stop_sequences?: string[];
-  stream?: boolean;
-  metadata?: {
-    user_id?: string;
-  };
+  tools?: any[];
+  tool_choice?: { type: string; name?: string };
 }
 
 /**
- * Claude响应格式
- */
-export interface ClaudeResponse {
-  id: string;
-  type: 'message';
-  role: 'assistant';
-  content: Array<{
-    type: 'text';
-    text: string;
-  }>;
-  model: string;
-  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence';
-  stop_sequence?: string;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-  };
-}
-
-/**
- * Claude流式响应事件
- */
-export interface ClaudeStreamEvent {
-  type: 'message_start' | 'content_block_start' | 'content_block_delta' | 'content_block_stop' | 'message_delta' | 'message_stop';
-  message?: Partial<ClaudeResponse>;
-  content_block?: {
-    type: 'text';
-    text: string;
-  };
-  delta?: {
-    type: 'text_delta';
-    text: string;
-  };
-  usage?: {
-    output_tokens: number;
-  };
-}
-
-/**
- * Claude请求转换器
+ * Claude 请求转换器 (Claude -> Gemini)
  */
 export class ClaudeTransformer {
   /**
-   * 将Claude请求转换为Gemini格式
+   * 将 Claude 请求转换为 Gemini 格式
    */
   static transformRequest(claudeRequest: ClaudeRequest, context: AdapterContext): any {
     // 1. 映射模型名称
-    const geminiModel = this.mapModelName(claudeRequest.model);
+    const geminiModel = MODEL_MAPPINGS[claudeRequest.model as keyof typeof MODEL_MAPPINGS] || claudeRequest.model;
     
-    // 2. 转换消息格式
+    // 2. 转换消息和系统提示
     const contents = this.convertMessages(claudeRequest.messages, claudeRequest.system);
     
     // 3. 转换生成配置
     const generationConfig = this.convertGenerationConfig(claudeRequest);
+
+    // 4. 【新增】转换工具
+    const geminiTools = this.convertTools(claudeRequest.tools);
+
+    // 5. 【新增】转换工具选择
+    const geminiToolConfig = this.convertToolChoice(claudeRequest.tool_choice);
     
     const geminiRequest: any = {
       contents,
       generationConfig,
     };
-    
-    // 添加安全设置
-    geminiRequest.safetySettings = this.getDefaultSafetySettings();
+
+    if (geminiTools && geminiTools.length > 0) {
+      geminiRequest.tools = geminiTools;
+    }
+
+    if (geminiToolConfig) {
+      geminiRequest.tool_config = geminiToolConfig;
+    }
     
     // 在上下文中存储原始模型名称用于响应
     context.context.set('originalModel', claudeRequest.model);
-    context.context.set('geminiModel', geminiModel);
+    context.context.set('geminiModel', geminiModel); // 保存 geminiModel
     
     return geminiRequest;
   }
 
   /**
-   * 将Gemini响应转换为Claude格式
+   * 将 Gemini 响应转换为 Claude 格式
    */
-  static transformResponse(geminiResponse: any, context: AdapterContext): ClaudeResponse {
-    const originalModel = context.context.get('originalModel') || 'claude-3-sonnet-20240229';
-    const requestId = context.requestId || this.generateId();
+  static transformResponse(geminiResponse: any, context: AdapterContext): any {
+    const originalModel = context.context.get('originalModel') || 'claude-3-opus-20240229';
+    const candidate = geminiResponse.candidates?.[0];
 
-    // 验证Gemini响应结构
-    if (!geminiResponse.candidates || geminiResponse.candidates.length === 0) {
+    if (!candidate) {
       throw new Error('Invalid Gemini response: no candidates');
     }
 
-    const candidate = geminiResponse.candidates[0];
-    const content = candidate.content;
+    const { content, finishReason } = candidate;
+    const claudeContent: any[] = [];
 
-    if (!content || !content.parts || content.parts.length === 0) {
-      throw new Error('Invalid Gemini response: no content parts');
+    // 【新增】检查并转换thinking部分
+    const thinkingPart = content?.parts?.find((part: any) => part.thinking);
+    if (thinkingPart) {
+      claudeContent.push({ type: 'thinking', thinking: thinkingPart.thinking });
     }
 
-    // 提取文本内容
-    const textContent = content.parts
-      .filter((part: any) => part.text)
-      .map((part: any) => part.text)
-      .join('');
+    // 检查并转换文本部分
+    const textPart = content?.parts?.find((part: any) => part.text);
+    if (textPart) {
+      claudeContent.push({ type: 'text', text: textPart.text });
+    }
 
-    // 确定停止原因
-    const stopReason = this.mapStopReason(candidate.finishReason);
+    // 【新增】检查并转换工具调用部分
+    const functionCallPart = content?.parts?.find((part: any) => part.functionCall);
+    if (functionCallPart?.functionCall) {
+      const { name, args } = functionCallPart.functionCall;
+      claudeContent.push({
+        type: 'tool_use',
+        id: `toolu_${context.requestId || ''}_${Date.now()}`, // 生成一个唯一的 tool use ID
+        name: name,
+        input: args || {},
+      });
+    }
 
-    // 构建Claude格式响应
-    const claudeResponse: ClaudeResponse = {
-      id: `msg_${requestId}`,
+    // 如果没有任何内容，添加一个空文本块以符合Claude格式
+    if (claudeContent.length === 0) {
+      claudeContent.push({ type: 'text', text: '' });
+    }
+
+    return {
+      id: `msg_${context.requestId}`,
       type: 'message',
       role: 'assistant',
-      content: [{
-        type: 'text',
-        text: textContent,
-      }],
       model: originalModel,
-      stop_reason: stopReason,
-      usage: this.extractUsageInfo(geminiResponse),
+      content: claudeContent,
+      stop_reason: this.mapStopReason(finishReason),
+      usage: {
+        input_tokens: geminiResponse.usageMetadata?.promptTokenCount || 0,
+        output_tokens: geminiResponse.usageMetadata?.candidatesTokenCount || 0,
+      },
     };
-
-    return claudeResponse;
   }
 
-  /**
-   * 转换流式响应块
-   */
-  static transformStreamChunk(geminiChunk: any, _context: AdapterContext): string[] {
-    const events: string[] = [];
+  // --- 辅助方法 ---
 
-    try {
-      const data = typeof geminiChunk === 'string' ? JSON.parse(geminiChunk) : geminiChunk;
-      
-      if (!data.candidates || data.candidates.length === 0) {
-        return events;
-      }
-
-      const candidate = data.candidates[0];
-
-      // 处理内容增量
-      if (candidate.content && candidate.content.parts) {
-        const textParts = candidate.content.parts.filter((part: any) => part.text);
-        
-        for (const part of textParts) {
-          if (part.text) {
-            // Claude流式格式：content_block_delta事件
-            const deltaEvent: ClaudeStreamEvent = {
-              type: 'content_block_delta',
-              delta: {
-                type: 'text_delta',
-                text: part.text,
-              },
-            };
-            
-            events.push(`event: content_block_delta\ndata: ${JSON.stringify(deltaEvent)}\n\n`);
-          }
-        }
-      }
-
-      // 检查是否完成
-      if (candidate.finishReason) {
-        const stopEvent: ClaudeStreamEvent = {
-          type: 'message_stop',
-        };
-        
-        // 如果有使用统计信息
-        if (data.usageMetadata) {
-          stopEvent.usage = {
-            output_tokens: data.usageMetadata.candidatesTokenCount || 0,
-          };
-        }
-        
-        events.push(`event: message_stop\ndata: ${JSON.stringify(stopEvent)}\n\n`);
-      }
-
-      return events;
-    } catch (error) {
-      log.error('Error transforming Claude stream chunk:', error as Error);
-      return [];
-    }
-  }
-
-  // === 私有辅助方法 ===
-
-  /**
-   * 映射模型名称
-   */
-  private static mapModelName(claudeModel: string): string {
-    const geminiModel = MODEL_MAPPINGS[claudeModel as keyof typeof MODEL_MAPPINGS];
-    
-    if (!geminiModel) {
-      AdapterErrorHandler.handleModelMappingError(claudeModel, 'claude');
-    }
-    
-    return geminiModel;
-  }
-
-  /**
-   * 转换消息格式
-   */
-  private static convertMessages(messages: ClaudeMessage[], systemPrompt?: string): any[] {
+  private static convertMessages(messages: { role: 'user' | 'assistant'; content: any }[], system?: string): any[] {
     const contents: any[] = [];
+    let systemPromptProcessed = false;
 
-    // 如果有系统提示，添加到第一个用户消息中
-    let prependedSystem = false;
+    // 将系统提示作为第一个 user message 的一部分
+    if (system) {
+      const firstUserMessageIndex = messages.findIndex(m => m.role === 'user');
+      if (firstUserMessageIndex !== -1) {
+        const originalContent = this.extractTextFromContent(messages[firstUserMessageIndex].content);
+        messages[firstUserMessageIndex].content = `${system}\n\n${originalContent}`;
+        systemPromptProcessed = true;
+      }
+    }
 
     for (const message of messages) {
-      switch (message.role) {
-        case 'user':
-          let userContent = this.extractTextContent(message.content);
-          
-          // 将系统提示添加到第一个用户消息中
-          if (systemPrompt && !prependedSystem) {
-            userContent = `${systemPrompt}\n\n${userContent}`;
-            prependedSystem = true;
-          }
-
-          // 确保用户内容不为空
-          if (!userContent.trim()) {
-            userContent = 'Hello'; // 提供默认内容
-          }
-
-          contents.push({
-            role: 'user',
-            parts: [{ text: userContent }],
-          });
-          break;
-
-        case 'assistant':
-          const assistantContent = this.extractTextContent(message.content);
-          // 确保助手内容不为空
-          if (assistantContent.trim()) {
-            contents.push({
-              role: 'model',
-              parts: [{ text: assistantContent }],
-            });
-          }
-          break;
-      }
-    }
-
-    // 如果没有用户消息但有系统提示，创建一个用户消息
-    if (systemPrompt && !prependedSystem) {
-      contents.unshift({
-        role: 'user',
-        parts: [{ text: systemPrompt }],
-      });
-    }
-
-    // 确保至少有一个用户消息
-    if (contents.length === 0 || !contents.some(c => c.role === 'user')) {
       contents.push({
-        role: 'user',
-        parts: [{ text: 'Hello' }],
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: this.extractTextFromContent(message.content) }],
       });
+    }
+
+    // 如果系统提示未被处理（例如，没有用户消息），则单独添加
+    if (system && !systemPromptProcessed) {
+      contents.unshift({ role: 'user', parts: [{ text: system }] });
     }
 
     return contents;
   }
 
-  /**
-   * 从消息内容中提取文本
-   */
-  private static extractTextContent(content: string | any[]): string {
-    if (typeof content === 'string') {
-      return content;
-    }
-
+  private static extractTextFromContent(content: any): string {
+    if (typeof content === 'string') return content;
     if (Array.isArray(content)) {
-      return content
-        .filter(item => item.type === 'text' && item.text)
-        .map(item => item.text)
-        .join('');
+      return content.filter(c => c.type === 'text').map(c => c.text).join('');
     }
-
     return '';
   }
 
-  /**
-   * 转换生成配置
-   */
   private static convertGenerationConfig(request: ClaudeRequest): any {
     const config: any = {};
-
-    if (request.max_tokens !== undefined) {
-      config.maxOutputTokens = request.max_tokens;
-    }
-
-    if (request.temperature !== undefined) {
-      config.temperature = request.temperature;
-    }
-
-    if (request.top_p !== undefined) {
-      config.topP = request.top_p;
-    }
-
-    if (request.top_k !== undefined) {
-      config.topK = request.top_k;
-    }
-
-    if (request.stop_sequences !== undefined) {
-      config.stopSequences = request.stop_sequences;
-    }
-
+    if (request.max_tokens !== undefined) config.maxOutputTokens = request.max_tokens;
+    if (request.temperature !== undefined) config.temperature = request.temperature;
+    if (request.top_p !== undefined) config.topP = request.top_p;
+    if (request.top_k !== undefined) config.topK = request.top_k;
+    if (request.stop_sequences !== undefined) config.stopSequences = request.stop_sequences;
     return config;
   }
 
   /**
-   * 获取默认安全设置
+   * 【新增】将 Claude 工具转换为 Gemini 工具
    */
-  private static getDefaultSafetySettings(): any[] {
-    return [
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-    ];
+  private static convertTools(tools?: any[]): any[] | undefined {
+    if (!tools || tools.length === 0) {
+      return undefined;
+    }
+
+    return [{
+      functionDeclarations: tools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: this.cleanJsonSchema(tool.input_schema), // 清理不支持的字段
+      })),
+    }];
   }
 
   /**
-   * 映射停止原因
+   * 清理 JSON Schema 中 Gemini API 不支持的字段
    */
-  private static mapStopReason(geminiReason?: string): ClaudeResponse['stop_reason'] {
-    switch (geminiReason) {
-      case 'STOP':
-        return 'end_turn';
-      case 'MAX_TOKENS':
-        return 'max_tokens';
-      case 'SAFETY':
-      case 'RECITATION':
-        return 'end_turn';
-      default:
-        return 'end_turn';
+  private static cleanJsonSchema(schema: any): any {
+    if (!schema || typeof schema !== 'object') {
+      return schema;
     }
+
+    // 创建副本以避免修改原始对象
+    const cleaned = JSON.parse(JSON.stringify(schema));
+
+    // 递归清理函数
+    const cleanObject = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') {
+        return obj;
+      }
+
+      if (Array.isArray(obj)) {
+        return obj.map(cleanObject);
+      }
+
+      const result: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        // 跳过 Gemini API 不支持的字段
+        if (key === 'additionalProperties' || key === '$schema') {
+          continue;
+        }
+        result[key] = cleanObject(value);
+      }
+      return result;
+    };
+
+    return cleanObject(cleaned);
   }
 
   /**
-   * 提取使用信息
+   * 【最终修正】将 Claude tool_choice 转换为 Gemini tool_config
    */
-  private static extractUsageInfo(geminiResponse: any): { input_tokens: number; output_tokens: number } {
-    if (geminiResponse.usageMetadata) {
-      return {
-        input_tokens: geminiResponse.usageMetadata.promptTokenCount || 0,
-        output_tokens: geminiResponse.usageMetadata.candidatesTokenCount || 0,
-      };
+  private static convertToolChoice(tool_choice?: { type: string; name?: string }): any | undefined {
+    if (!tool_choice) {
+      return undefined;
     }
 
-    // 如果没有使用信息，返回默认值
+    let mode: 'AUTO' | 'ANY' | 'NONE' = 'AUTO';
+    let allowedFunctionNames: string[] | undefined = undefined;
+
+    if (tool_choice.type === 'any') {
+      mode = 'ANY';
+    } else if (tool_choice.type === 'auto') {
+      mode = 'AUTO';
+    } else if (tool_choice.type === 'tool' && tool_choice.name) {
+      mode = 'ANY';
+      allowedFunctionNames = [tool_choice.name];
+    } else {
+      return undefined;
+    }
+
     return {
-      input_tokens: 0,
-      output_tokens: 0,
+      functionCallingConfig: {
+        mode: mode,
+        ...(allowedFunctionNames && { allowedFunctionNames: allowedFunctionNames }),
+      },
     };
   }
 
-  /**
-   * 生成请求ID
-   */
-  private static generateId(): string {
-    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  private static mapStopReason(geminiReason?: string): string {
+    switch (geminiReason) {
+      case 'STOP': return 'end_turn';
+      case 'MAX_TOKENS': return 'max_tokens';
+      // Gemini 的 'TOOL_CALL' 应该映射到 Claude 的 'tool_use'
+      case 'TOOL_CALL': return 'tool_use'; 
+      default: return 'end_turn';
+    }
   }
 }

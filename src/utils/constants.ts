@@ -38,9 +38,10 @@ export const MODEL_MAPPINGS = {
   // Claude -> Gemini
   'claude-opus-4-20250514': 'gemini-2.5-pro',
   'claude-sonnet-4-20250514': 'gemini-2.5-flash',
-  'claude-3-7-sonnet-20250219': 'gemini-2.0-flash',
+  'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
   'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
   'claude-3-5-haiku-20241022': 'gemini-2.0-flash',
+  'claude-3-opus-20240229': 'gemini-2.0-flash', // 修正后的映射
   'claude-3-sonnet-20240229': 'gemini-2.0-flash',
 
   // 嵌入模型

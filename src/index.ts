@@ -155,6 +155,7 @@ function createApp(): Hono {
           '/v1/embeddings', 
           '/v1/models',
           '/v1/messages',
+          '/v1/count-tokens', // 新增到404提示
           '/v1beta/models',
           '/v1beta/models/{model}:generateContent',
         ],
