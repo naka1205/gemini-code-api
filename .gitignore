@@ -2,3 +2,5 @@
 /migrations
 /script
 /.wrangler
+/examples/config.js
+/scripts/config.cjs

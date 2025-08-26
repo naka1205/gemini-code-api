@@ -114,11 +114,51 @@ export const OpenAIRequestSchema = StandardRequestSchema.extend({
 export const ClaudeRequestSchema = StandardRequestSchema.extend({
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant']),
-    content: z.union([z.string(), z.array(z.any())]),
+    content: z.union([
+      z.string(),
+      z.array(z.object({
+        type: z.enum(['text', 'tool_use', 'thinking']),
+        text: z.string().optional(),
+        thinking: z.string().optional(),
+        tool_use: z.object({
+          id: z.string(),
+          name: z.string(),
+          input: z.record(z.any())
+        }).optional()
+      }))
+    ]),
   })),
   system: z.string().optional(),
+  max_tokens: z.number().int().min(1).max(8192),
+  temperature: z.number().min(0).max(1).optional(),
+  top_p: z.number().min(0).max(1).optional(),
+  top_k: z.number().int().min(1).max(40).optional(),
+  stop_sequences: z.array(z.string()).max(4).optional(),
+  stream: z.boolean().optional(),
+  tools: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    input_schema: z.object({
+      type: z.string(),
+      properties: z.record(z.any()),
+      required: z.array(z.string()).optional()
+    })
+  })).optional(),
+  tool_choice: z.union([
+    z.literal('auto'),
+    z.literal('none'),
+    z.object({
+      type: z.literal('tool'),
+      name: z.string()
+    })
+  ]).optional(),
   anthropic_version: z.string().optional(),
   anthropic_beta: z.array(z.string()).optional(),
+  // 添加 Extended Thinking 参数验证
+  thinking: z.object({
+    type: z.enum(['enabled', 'disabled']),
+    budget_tokens: z.number().int().min(1024).max(8192).optional()
+  }).optional(),
 });
 
 /**

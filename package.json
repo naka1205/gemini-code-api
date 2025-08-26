@@ -17,7 +17,10 @@
     "db:create": "wrangler d1 create gemini-code",
     "db:migrate": "wrangler d1 migrations apply gemini-code --remote",
     "db:migrate:local": "wrangler d1 migrations apply gemini-code --local",
-    "db:reset": "wrangler d1 execute gemini-code --command='DROP TABLE IF EXISTS request_logs; DROP TABLE IF EXISTS api_key_metrics; DROP TABLE IF EXISTS system_stats;' && npm run db:migrate"
+    "db:reset": "wrangler d1 execute gemini-code --command='DROP TABLE IF EXISTS request_logs; DROP TABLE IF EXISTS api_key_metrics; DROP TABLE IF EXISTS system_stats;' && npm run db:migrate",
+    "examples": "node examples/run.js",
+    "examples:gemini": "node examples/run.js gemini",
+    "examples:claude": "node examples/run.js claude"
   },
   "keywords": [
     "gemini",

@@ -335,32 +335,61 @@ async function handleStreamingMessages(
 ) {
   // 添加思考配置 - 对于支持thinking的Gemini模型
   if (geminiModel.includes('2.5')) {
-    if (geminiRequest.generationConfig) {
-      const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
-      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
-      
-      geminiRequest.generationConfig.thinkingConfig = {
-        includeThoughts: true,
-        thinkingBudget: thinkingBudget
-      };
-      
-      logger.info('Added thinking config for Claude streaming', { 
-        maxTokens, 
-        thinkingBudget,
-        includeThoughts: true 
-      });
-    } else {
-      geminiRequest.generationConfig = {
-        thinkingConfig: {
+    // 修复：只有在用户明确启用时才启用思考功能，并设置稳健默认
+    const userThinkingEnabled = geminiRequest.thinking?.type === "enabled";
+    const userThinkingDisabled = geminiRequest.thinking?.type === "disabled";
+    
+    if (userThinkingEnabled) {
+      // 用户明确启用思考功能
+      if (geminiRequest.generationConfig) {
+        const maxTokens = Math.max(1024, geminiRequest.generationConfig.maxOutputTokens || 0);
+        const thinkingBudget = geminiRequest.thinking?.budget_tokens 
+          ? Math.max(256, Math.min(geminiRequest.thinking.budget_tokens, Math.floor(maxTokens * 0.33)))
+          : Math.max(256, Math.min(Math.floor(maxTokens * 0.33), 4096));
+        
+        geminiRequest.generationConfig.thinkingConfig = {
           includeThoughts: true,
-          thinkingBudget: 8192
-        }
-      };
-      
-      logger.info('Created generation config with thinking for Claude streaming', { 
-        thinkingBudget: 8192,
-        includeThoughts: true 
-      });
+          thinkingBudget: thinkingBudget
+        };
+        
+        logger.info('Added thinking config for Claude streaming (user enabled)', { 
+          maxTokens, 
+          thinkingBudget,
+          includeThoughts: true,
+          userEnabled: true
+        });
+      } else {
+        const maxTokens = 1024;
+        const thinkingBudget = geminiRequest.thinking?.budget_tokens 
+          ? Math.max(256, Math.min(geminiRequest.thinking.budget_tokens, Math.floor(maxTokens * 0.33)))
+          : Math.floor(maxTokens * 0.33);
+        geminiRequest.generationConfig = {
+          maxOutputTokens: maxTokens,
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget
+          }
+        };
+        
+        logger.info('Created generation config with thinking for Claude streaming (user enabled)', { 
+          thinkingBudget: geminiRequest.thinking?.budget_tokens 
+            ? Math.max(1024, Math.min(geminiRequest.thinking.budget_tokens, 8192))
+            : 8192,
+          includeThoughts: true,
+          userEnabled: true
+        });
+      }
+    } else if (userThinkingDisabled) {
+      // 用户明确禁用思考功能
+      logger.info('User explicitly disabled thinking for Claude streaming');
+      // 不添加任何思考配置
+    } else {
+      // 用户未指定思考配置，明确禁用思考功能（Claude默认行为），并设置稳健默认的 maxOutputTokens
+      logger.info('User did not specify thinking config for streaming, explicitly disabling thinking (Claude default behavior)');
+      if (!geminiRequest.generationConfig) {
+        geminiRequest.generationConfig = { maxOutputTokens: 1024 };
+      }
+      geminiRequest.generationConfig.thinkingConfig = { includeThoughts: false };
     }
   }
   
@@ -513,34 +542,69 @@ export function createMessagesRoute(): Hono {
       };
       const geminiRequest = ClaudeTransformer.transformRequest(requestBody, adapterContext);
       
-      // 添加思考配置 - 对于支持thinking的Gemini模型
+      // 添加思考配置与稳健默认 - 对于支持thinking的Gemini模型
       if (geminiModel.includes('2.5')) {
-        if (geminiRequest.generationConfig) {
-          const maxTokens = geminiRequest.generationConfig.maxOutputTokens || 8192;
-          const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
-          
-          geminiRequest.generationConfig.thinkingConfig = {
-            includeThoughts: true,
-            thinkingBudget: thinkingBudget
-          };
-          
-          logger.info('Added thinking config for Claude interface', { 
-            maxTokens, 
-            thinkingBudget,
-            includeThoughts: true 
-          });
-        } else {
-          geminiRequest.generationConfig = {
-            thinkingConfig: {
+        // 修复：只有在用户明确启用时才启用思考功能
+        const userThinkingEnabled = requestBody.thinking?.type === "enabled";
+        const userThinkingDisabled = requestBody.thinking?.type === "disabled";
+        
+        if (userThinkingEnabled) {
+          // 用户明确启用思考功能
+          if (geminiRequest.generationConfig) {
+            // 设定稳健默认：无则至少 1024
+            const maxTokens = Math.max(1024, geminiRequest.generationConfig.maxOutputTokens || 0);
+            const thinkingBudget = requestBody.thinking?.budget_tokens 
+              ? Math.max(256, Math.min(requestBody.thinking.budget_tokens, Math.floor(maxTokens * 0.5)))
+              : Math.max(256, Math.min(Math.floor(maxTokens * 0.5), 4096));
+            
+            geminiRequest.generationConfig.thinkingConfig = {
               includeThoughts: true,
-              thinkingBudget: 8192
-            }
-          };
-          
-          logger.info('Created generation config with thinking for Claude interface', { 
-            thinkingBudget: 8192,
-            includeThoughts: true 
-          });
+              thinkingBudget: thinkingBudget
+            };
+            
+            logger.info('Added thinking config for Claude interface (user enabled)', { 
+              maxTokens, 
+              thinkingBudget,
+              includeThoughts: true,
+              userEnabled: true
+            });
+          } else {
+            const maxTokens = 1024;
+            const thinkingBudget = requestBody.thinking?.budget_tokens 
+              ? Math.max(256, Math.min(requestBody.thinking.budget_tokens, Math.floor(maxTokens * 0.5)))
+              : Math.floor(maxTokens * 0.5);
+            geminiRequest.generationConfig = {
+              maxOutputTokens: maxTokens,
+              thinkingConfig: {
+                includeThoughts: true,
+                thinkingBudget
+              }
+            };
+            
+            logger.info('Created generation config with thinking for Claude interface (user enabled)', { 
+              thinkingBudget: requestBody.thinking?.budget_tokens 
+                ? Math.max(1024, Math.min(requestBody.thinking.budget_tokens, 8192))
+                : 8192,
+              includeThoughts: true,
+              userEnabled: true
+            });
+          }
+        } else if (userThinkingDisabled) {
+          // 用户明确禁用思考功能
+          logger.info('User explicitly disabled thinking for Claude interface');
+          // 不添加任何思考配置
+        } else {
+          // 用户未指定思考配置，明确禁用思考功能（Claude默认行为）
+          logger.info('User did not specify thinking config, explicitly disabling thinking (Claude default behavior)');
+          if (!geminiRequest.generationConfig) {
+            geminiRequest.generationConfig = { maxOutputTokens: 1024 };
+          }
+          geminiRequest.generationConfig.thinkingConfig = { includeThoughts: false };
+        }
+      } else {
+        // 非 2.5 模型：移除任何思考配置以避免上游报错
+        if (geminiRequest?.generationConfig?.thinkingConfig) {
+          delete geminiRequest.generationConfig.thinkingConfig;
         }
       }
       
@@ -584,6 +648,22 @@ export function createMessagesRoute(): Hono {
 
       logger.info(`Gemini API call successful: ${response.status}`);
 
+      // 添加调试日志来查看响应格式
+      logger.info('Gemini API response structure', {
+        hasCandidates: !!responseData.candidates,
+        candidatesCount: responseData.candidates?.length || 0,
+        firstCandidate: responseData.candidates?.[0] ? {
+          hasContent: !!responseData.candidates[0].content,
+          hasParts: !!responseData.candidates[0].content?.parts,
+          partsCount: responseData.candidates[0].content?.parts?.length || 0,
+          finishReason: responseData.candidates[0].finishReason,
+          hasThought: !!responseData.candidates[0].thought,
+          hasThinking: !!responseData.candidates[0].thinking
+        } : null,
+        usageMetadata: responseData.usageMetadata,
+        promptFeedback: responseData.promptFeedback || null
+      });
+
       // 转换Gemini响应到Claude格式
       const content: any[] = [];
       
@@ -591,18 +671,32 @@ export function createMessagesRoute(): Hono {
         const candidate = responseData.candidates[0];
         const parts = candidate.content?.parts || [];
         
+        // 添加调试日志来查看parts结构
+        logger.info('Processing candidate parts', {
+          partsCount: parts.length,
+          parts: parts.map((part: any) => ({
+            hasText: !!part.text,
+            textLength: part.text?.length || 0,
+            thought: part.thought,
+            hasThinking: !!part.thinking,
+            hasFunctionCall: !!part.functionCall
+          }))
+        });
+        
         // 处理候选级思考内容
         const candThought = candidate.thought || candidate.thinking || candidate.internalThought;
         if (typeof candThought === 'string' && candThought.length > 0) {
           content.push({ type: 'thinking', thinking: candThought });
+          logger.info('Added candidate-level thinking content', { length: candThought.length });
         }
         
-        // 处理part级思考内容和普通文本
+        // 处理part级思考内容、普通文本和工具调用
         let hasThinkingContent = false;
         let textContent = '';
+        let hasToolUse = false;
         
         for (const part of parts) {
-          // 检查是否为思考内容
+          // 检查是否为思考内容 - 修复：只有明确标记为思考的内容才当作思考
           let thinkingText: string | undefined;
           if (part.thought === true && typeof part.text === 'string') {
             thinkingText = part.text;
@@ -613,25 +707,74 @@ export function createMessagesRoute(): Hono {
           }
           
           if (thinkingText && !hasThinkingContent) {
+            // 添加思考内容
             content.push({ type: 'thinking', thinking: thinkingText });
             hasThinkingContent = true;
+            logger.info('Added part-level thinking content', { length: thinkingText.length });
           } else if (part.text && part.thought !== true) {
-            // 普通文本内容（忽略 thought===true 的文本）
+            // 修复：普通文本内容（忽略 thought===true 的文本）
             textContent += part.text;
+            logger.info('Added text content', { text: part.text.substring(0, 100) + '...' });
+          }
+          
+          // 处理工具调用
+          if (part.functionCall && !hasToolUse) {
+            const { name, args } = part.functionCall;
+            content.push({
+              type: 'tool_use',
+              id: `toolu_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
+              name: name,
+              input: args || {},
+            });
+            hasToolUse = true;
+            logger.info('Added tool use content', { name });
           }
         }
         
-        // 添加文本内容
+        // 添加文本内容 - 修复：确保文本内容被正确添加
         if (textContent) {
           content.push({ type: 'text', text: textContent });
+          logger.info('Final text content added', { length: textContent.length });
         }
         
-        // 如果没有任何内容，添加默认文本
+        // 如果没有任何内容，基于安全/屏蔽与结束原因生成可诊断的文本
         if (content.length === 0) {
-          content.push({ type: 'text', text: parts[0]?.text || 'Error: No response from Gemini API' });
+          const finishReason = candidate.finishReason;
+          const promptFeedback = responseData.promptFeedback;
+          const blockReason = promptFeedback?.blockReason || candidate.blockReason;
+          const diagnostic = blockReason ? `Blocked by safety: ${blockReason}` : (finishReason ? `No output (finishReason=${finishReason})` : 'No output');
+          logger.warn('No content processed, adding diagnostic text', { finishReason, blockReason });
+          content.push({ type: 'text', text: diagnostic });
         }
+        
+        logger.info('Final content structure', {
+          contentCount: content.length,
+          contentTypes: content.map(item => item.type)
+        });
       } else {
-        content.push({ type: 'text', text: 'Error: No response from Gemini API' });
+        // 无候选：可能为安全屏蔽或其它原因
+        const promptFeedback = responseData.promptFeedback;
+        const blockReason = promptFeedback?.blockReason || responseData.blockReason;
+        const msg = blockReason ? `Blocked by safety: ${blockReason}` : 'No candidates from Gemini API';
+        logger.warn('No candidates in Gemini response', { blockReason, promptFeedback });
+        content.push({ type: 'text', text: msg });
+      }
+      
+      // 确定stop_reason
+      let stopReason = 'end_turn';
+      const finishReasonRaw = responseData.candidates?.[0]?.finishReason;
+      const promptFeedback = responseData.promptFeedback;
+      const blockReason = promptFeedback?.blockReason || responseData.candidates?.[0]?.blockReason;
+      if (content.some(item => item.type === 'tool_use')) {
+        stopReason = 'tool_use';
+      } else if (blockReason) {
+        stopReason = 'safety';
+      } else if (finishReasonRaw === 'MAX_TOKENS') {
+        stopReason = 'max_tokens';
+      } else if (!responseData.candidates || !responseData.candidates[0]) {
+        stopReason = 'no_output';
+      } else if (finishReasonRaw === 'STOP' || finishReasonRaw === 'FINISH' || finishReasonRaw === 'END_TURN') {
+        stopReason = 'end_turn';
       }
       
       const claudeResponse = {
@@ -640,8 +783,7 @@ export function createMessagesRoute(): Hono {
         role: 'assistant',
         content: content,
         model: requestBody.model,
-        stop_reason: responseData.candidates?.[0]?.finishReason === 'STOP' ? 'end_turn' :
-                    responseData.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? 'max_tokens' : 'end_turn',
+        stop_reason: stopReason,
         stop_sequence: null,
         usage: {
           input_tokens: responseData.usageMetadata?.promptTokenCount || 0,

@@ -1,0 +1,62 @@
+{
+  "company": {
+    "name": "TechCorp Inc.",
+    "founded": 2010,
+    "industry": "Technology",
+    "headquarters": {
+      "city": "San Francisco",
+      "country": "USA",
+      "address": "123 Innovation Street"
+    }
+  },
+  "employees": [
+    {
+      "id": 1,
+      "name": "Alice Johnson",
+      "position": "Software Engineer",
+      "department": "Engineering",
+      "salary": 85000,
+      "skills": ["JavaScript", "Python", "React", "Node.js"]
+    },
+    {
+      "id": 2,
+      "name": "Bob Smith",
+      "position": "Data Scientist",
+      "department": "Data Science",
+      "salary": 95000,
+      "skills": ["Python", "R", "Machine Learning", "SQL"]
+    },
+    {
+      "id": 3,
+      "name": "Carol Davis",
+      "position": "Product Manager",
+      "department": "Product",
+      "salary": 90000,
+      "skills": ["Product Strategy", "User Research", "Agile", "Analytics"]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-001",
+      "name": "AI Chatbot",
+      "status": "In Progress",
+      "budget": 50000,
+      "team": [1, 2],
+      "technologies": ["Python", "TensorFlow", "React", "Node.js"]
+    },
+    {
+      "id": "proj-002",
+      "name": "Mobile App",
+      "status": "Completed",
+      "budget": 75000,
+      "team": [1, 3],
+      "technologies": ["React Native", "Firebase", "TypeScript"]
+    }
+  ],
+  "metrics": {
+    "revenue": 2500000,
+    "growth_rate": 0.15,
+    "customer_satisfaction": 4.5,
+    "employee_retention": 0.92
+  }
+}

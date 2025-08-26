@@ -41,7 +41,7 @@ export const MODEL_MAPPINGS = {
   'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
   'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
   'claude-3-5-haiku-20241022': 'gemini-2.0-flash',
-  'claude-3-opus-20240229': 'gemini-2.0-flash', // 修正后的映射
+  'claude-3-opus-20240229': 'gemini-2.0-flash',
   'claude-3-sonnet-20240229': 'gemini-2.0-flash',
 
   // 嵌入模型
@@ -49,6 +49,22 @@ export const MODEL_MAPPINGS = {
   'text-embedding-3-small': 'text-embedding-004',
   'text-embedding-3-large': 'text-multilingual-embedding-002',
 } as const;
+
+// 支持思考(Thinking)的模型白名单（以官方文档为准）
+export const THINKING_SUPPORTED_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+] as const;
+
+// 检测模型是否支持思考：考虑可能的后缀（如 -latest、-exp 等）
+export function isThinkingSupportedModel(model: string): boolean {
+  if (!model) return false;
+  const normalized = model.trim().toLowerCase();
+  return (
+    normalized.startsWith('gemini-2.5-flash') ||
+    normalized.startsWith('gemini-2.5-pro')
+  );
+}
 
 // 缓存配置
 export const CACHE_CONFIG = {

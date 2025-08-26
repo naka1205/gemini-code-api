@@ -6,7 +6,7 @@ import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAda
 import { RequestBodyValidator } from '../base/validator.js';
 import { AdapterErrorHandler } from '../base/errors.js';
 import { ClaudeTransformer, type ClaudeRequest } from './transformer.js';
-import { createClaudeStreamTransform } from './streaming.js';
+import { createClaudeStreamTransformer } from './streaming.js';
 import { API_CONFIG } from '../../utils/constants.js';
 
 /**
@@ -278,6 +278,7 @@ export class ClaudeMessageAdapter extends BaseAdapter {
    * 创建Claude格式的流式转换器
    */
   private createClaudeStreamTransform(context: AdapterContext): TransformStream {
-    return createClaudeStreamTransform(context);
+    const model = this.extractModelFromContext(context);
+    return createClaudeStreamTransformer(model, { emitPrelude: true });
   }
 }

@@ -71,20 +71,58 @@ export interface ClaudeMessage {
 }
 
 export interface ClaudeContent {
-  type: 'text' | 'image';
+  type: 'text' | 'tool_use' | 'thinking';
   text?: string;
-  source?: {
-    type: 'base64';
-    media_type: string;
-    data: string;
+  thinking?: string;
+  tool_use?: {
+    id: string;
+    name: string;
+    input: Record<string, any>;
   };
 }
 
 export interface ClaudeRequest extends StandardRequest {
   messages: ClaudeMessage[];
   system?: string;
+  max_tokens: number;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  stop_sequences?: string[];
+  stream?: boolean;
+  tools?: ClaudeTool[];
+  tool_choice?: 'auto' | 'none' | { type: 'tool'; name: string };
   anthropic_version?: string;
   anthropic_beta?: string[];
+  // 添加 Extended Thinking 支持
+  thinking?: {
+    type: "enabled" | "disabled";
+    budget_tokens?: number;
+  };
+}
+
+export interface ClaudeTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: string;
+    properties: Record<string, any>;
+    required?: string[];
+  };
+}
+
+export interface ClaudeResponse {
+  id: string;
+  type: 'message';
+  role: 'assistant';
+  content: ClaudeContent[];
+  model: string;
+  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
+  stop_sequence: string | null;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
 }
 
 // Gemini 类型定义
@@ -126,6 +164,11 @@ export interface GeminiRequest {
     frequencyPenalty?: number;
     responseLogprobs?: boolean;
     logprobs?: number;
+    // 添加 Thinking 配置支持
+    thinkingConfig?: {
+      includeThoughts: boolean;
+      thinkingBudget: number;
+    };
   };
 }
 

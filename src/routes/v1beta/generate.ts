@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { detectClientType } from '../../middleware/auth/detector.js';
 import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
+import { isThinkingSupportedModel } from '../../utils/constants.js';
 import { throwError } from '../../middleware/error-handler.js';
 import { getLogger } from '../../middleware/logger.js';
 
@@ -127,35 +128,48 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
-    // 处理思考配置 - 默认启用思考功能
-    if (requestBody.generationConfig) {
-      const maxTokens = requestBody.generationConfig.maxOutputTokens || 8192;
-      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
-      
-      // 添加思考配置
-      requestBody.generationConfig.thinkingConfig = {
-        includeThoughts: true,
-        thinkingBudget: thinkingBudget
+    // 处理思考配置（与官方一致）：
+    // - 仅 2.5 模型支持思考；
+    // - 仅在请求显式启用时注入 includeThoughts=true；显式禁用时注入 includeThoughts=false；未指定则不注入任何思考配置；
+    // - 非 2.5 模型移除任何思考配置，避免报错
+    const isThinkingModel = isThinkingSupportedModel(model);
+    const userThinkingType = requestBody?.thinking?.type as ('enabled'|'disabled'|undefined);
+    if (!requestBody.generationConfig) requestBody.generationConfig = {};
+    const userGenThinking = requestBody.generationConfig?.thinkingConfig;
+    const hasUserGenThinking = userGenThinking && typeof userGenThinking.includeThoughts === 'boolean';
+
+    if (isThinkingModel) {
+      const maxTokens = Math.max(1, Number(requestBody.generationConfig.maxOutputTokens || 0)) || 1024;
+      const cap = Math.floor(maxTokens * 0.33);
+      const normBudget = (v: any) => {
+        const raw = Number(v);
+        return Math.max(256, Math.min(Number.isFinite(raw) ? raw : 1024, Math.max(256, cap)));
       };
-      
-      logger.info('Added thinking config', { 
-        maxTokens, 
-        thinkingBudget,
-        includeThoughts: true 
-      });
+
+      if (hasUserGenThinking) {
+        // 尊重 generationConfig.thinkingConfig 的显式设置，并裁剪预算
+        const includeThoughts = !!userGenThinking.includeThoughts;
+        const thinkingBudget = includeThoughts ? normBudget(userGenThinking.thinkingBudget) : undefined;
+        requestBody.generationConfig.thinkingConfig = includeThoughts
+          ? { includeThoughts: true, thinkingBudget }
+          : { includeThoughts: false };
+        logger.info('Respect generationConfig.thinkingConfig from client (2.5)', { includeThoughts, thinkingBudget });
+      } else if (userThinkingType === 'enabled') {
+        const thinkingBudget = normBudget(requestBody?.thinking?.budget_tokens);
+        requestBody.generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget };
+        logger.info('Thinking enabled by user.top-level (2.5)', { maxTokens, thinkingBudget });
+      } else if (userThinkingType === 'disabled') {
+        requestBody.generationConfig.thinkingConfig = { includeThoughts: false };
+        logger.info('Thinking disabled by user.top-level (2.5)');
+      } else {
+        // 未指定：不注入思考配置，保持模型默认
+        if (requestBody.generationConfig.thinkingConfig) delete requestBody.generationConfig.thinkingConfig;
+        logger.info('No explicit thinking config from user; leaving default (2.5)');
+      }
     } else {
-      // 如果没有generationConfig，创建一个包含思考配置的
-      requestBody.generationConfig = {
-        thinkingConfig: {
-          includeThoughts: true,
-          thinkingBudget: 8192
-        }
-      };
-      
-      logger.info('Created generation config with thinking', { 
-        thinkingBudget: 8192,
-        includeThoughts: true 
-      });
+      // 非 2.5：删除任何思考配置
+      if (requestBody.generationConfig.thinkingConfig) delete requestBody.generationConfig.thinkingConfig;
+      logger.info('Removed thinking config for non-2.5 model');
     }
 
     // 选择API密钥 - 确保安全访问
@@ -243,35 +257,40 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
       throwError.validation('Field "contents" is required and must be a non-empty array');
     }
 
-    // 处理思考配置 - 默认启用思考功能
-    if (requestBody.generationConfig) {
-      const maxTokens = requestBody.generationConfig.maxOutputTokens || 8192;
-      const thinkingBudget = Math.max(1024, Math.min(maxTokens - 1, 8192));
-      
-      // 添加思考配置
-      requestBody.generationConfig.thinkingConfig = {
-        includeThoughts: true,
-        thinkingBudget: thinkingBudget
+    // 流式思考配置处理（同上）：
+    const isThinkingModelS = isThinkingSupportedModel(model);
+    const userThinkingTypeS = requestBody?.thinking?.type as ('enabled'|'disabled'|undefined);
+    if (!requestBody.generationConfig) requestBody.generationConfig = {};
+    const userGenThinkingS = requestBody.generationConfig?.thinkingConfig;
+    const hasUserGenThinkingS = userGenThinkingS && typeof userGenThinkingS.includeThoughts === 'boolean';
+    if (isThinkingModelS) {
+      const maxTokens = Math.max(1, Number(requestBody.generationConfig.maxOutputTokens || 0)) || 1024;
+      const cap = Math.floor(maxTokens * 0.33);
+      const normBudget = (v: any) => {
+        const raw = Number(v);
+        return Math.max(256, Math.min(Number.isFinite(raw) ? raw : 1024, Math.max(256, cap)));
       };
-      
-      logger.info('Added thinking config for streaming', { 
-        maxTokens, 
-        thinkingBudget,
-        includeThoughts: true 
-      });
+      if (hasUserGenThinkingS) {
+        const includeThoughts = !!userGenThinkingS.includeThoughts;
+        const thinkingBudget = includeThoughts ? normBudget(userGenThinkingS.thinkingBudget) : undefined;
+        requestBody.generationConfig.thinkingConfig = includeThoughts
+          ? { includeThoughts: true, thinkingBudget }
+          : { includeThoughts: false };
+        logger.info('Respect generationConfig.thinkingConfig from client (2.5 streaming)', { includeThoughts, thinkingBudget });
+      } else if (userThinkingTypeS === 'enabled') {
+        const thinkingBudget = normBudget(requestBody?.thinking?.budget_tokens);
+        requestBody.generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget };
+        logger.info('Thinking enabled by user.top-level (2.5 streaming)', { maxTokens, thinkingBudget });
+      } else if (userThinkingTypeS === 'disabled') {
+        requestBody.generationConfig.thinkingConfig = { includeThoughts: false };
+        logger.info('Thinking disabled by user.top-level (2.5 streaming)');
+      } else {
+        if (requestBody.generationConfig.thinkingConfig) delete requestBody.generationConfig.thinkingConfig;
+        logger.info('No explicit thinking config from user; leaving default (2.5 streaming)');
+      }
     } else {
-      // 如果没有generationConfig，创建一个包含思考配置的
-      requestBody.generationConfig = {
-        thinkingConfig: {
-          includeThoughts: true,
-          thinkingBudget: 8192
-        }
-      };
-      
-      logger.info('Created generation config with thinking for streaming', { 
-        thinkingBudget: 8192,
-        includeThoughts: true 
-      });
+      if (requestBody.generationConfig.thinkingConfig) delete requestBody.generationConfig.thinkingConfig;
+      logger.info('Removed thinking config for non-2.5 model (streaming)');
     }
 
     // 选择API密钥 - 确保安全访问
