@@ -13,6 +13,8 @@ examples/
 ├── data/                        # 测试数据
 │   ├── images/                  # 测试图片
 │   └── documents/               # 测试文档
+├── responses/                   # 响应结果文件
+│   └── README.md               # 响应文件说明
 ├── gemini/                      # Gemini 原生 API 示例
 │   ├── basic-chat.js           # 基础对话
 │   ├── image-upload.js         # 图片上传和理解
@@ -28,7 +30,8 @@ examples/
     ├── tool-use.js             # 工具使用
     ├── multi-turn.js           # 多轮对话
     ├── system-messages.js      # 系统消息
-    └── streaming.js            # 流式响应
+    ├── streaming.js            # 流式响应
+    └── extended-thinking.js    # 深度思考功能
 ```
 
 ## 🚀 快速开始
@@ -57,28 +60,28 @@ npm run examples
 
 ### 🔵 Gemini 原生 API 示例
 
-| 示例 | 功能描述 | 复杂度 |
-|------|----------|--------|
-| `basic-chat.js` | 基础文本对话 | ⭐ |
-| `image-upload.js` | 图片上传和理解 | ⭐⭐ |
-| `web-access.js` | 网页内容访问 | ⭐⭐ |
-| `tool-calling.js` | 函数调用和工具使用 | ⭐⭐⭐ |
-| `multi-turn-chat.js` | 多轮对话管理 | ⭐⭐ |
-| `structured-output.js` | 结构化输出生成 | ⭐⭐ |
-| `long-context.js` | 长上下文处理 | ⭐⭐⭐ |
-| `streaming.js` | 流式响应处理 | ⭐⭐ |
+| 示例 | 功能描述 | 复杂度 | 输出文件 |
+|------|----------|--------|----------|
+| `basic-chat.js` | 基础文本对话 | ⭐ | `gemini-基础对话.json` |
+| `image-upload.js` | 图片上传和理解 | ⭐⭐ | `gemini-图片描述.json`, `gemini-图片分析.json`, `gemini-图片问答.json`, `gemini-多图片比较.json`, `gemini-创意生成.json`, `gemini-技术分析.json` |
+| `web-access.js` | 网页内容访问 | ⭐⭐ | `gemini-网页访问.json` |
+| `tool-calling.js` | 函数调用和工具使用 | ⭐⭐⭐ | `gemini-天气查询.json`, `gemini-计算器.json`, `gemini-多工具调用.json`, `gemini-强制工具使用.json` |
+| `multi-turn-chat.js` | 多轮对话管理 | ⭐⭐ | `gemini-多轮对话.json` |
+| `structured-output.js` | 结构化输出生成 | ⭐⭐ | `gemini-结构化输出.json` |
+| `long-context.js` | 长上下文处理 | ⭐⭐⭐ | `gemini-长上下文处理.json` |
+| `streaming.js` | 流式响应处理 | ⭐⭐ | `gemini-流式响应.json` |
 
 ### 🟣 Claude API 示例
 
-| 示例 | 功能描述 | 复杂度 |
-|------|----------|--------|
-| `basic-messages.js` | 基础消息处理 | ⭐ |
-| `image-understanding.js` | 图片理解 | ⭐⭐ |
-| `tool-use.js` | 工具使用 | ⭐⭐⭐ |
-| `multi-turn.js` | 多轮对话 | ⭐⭐ |
-| `system-messages.js` | 系统消息处理 | ⭐⭐ |
-| `streaming.js` | 流式响应 | ⭐⭐ |
-| `extended-thinking.js` | Extended Thinking 功能 | ⭐⭐⭐ |
+| 示例 | 功能描述 | 复杂度 | 输出文件 |
+|------|----------|--------|----------|
+| `basic-messages.js` | 基础消息处理 | ⭐ | `claude-基础消息.json` |
+| `image-understanding.js` | 图片理解 | ⭐⭐ | `claude-图片理解.json` |
+| `tool-use.js` | 工具使用 | ⭐⭐⭐ | `claude-工具使用.json`, `claude-多工具调用.json`, `claude-强制工具使用.json` |
+| `multi-turn.js` | 多轮对话 | ⭐⭐ | `claude-多轮对话.json` |
+| `system-messages.js` | 系统消息处理 | ⭐⭐ | `claude-系统消息.json` |
+| `streaming.js` | 流式响应 | ⭐⭐ | `claude-流式响应.json` |
+| `extended-thinking.js` | 深度思考功能 | ⭐⭐⭐ | `claude-深度思考.json` |
 
 ## 🔧 配置说明
 
@@ -102,7 +105,7 @@ module.exports = {
   },
   models: {
     gemini: { default: 'gemini-2.5-flash', pro: 'gemini-2.5-pro', vision: 'gemini-2.5-flash' },
-    claude: { default: 'claude-3-5-sonnet-20241022', haiku: 'claude-3-5-haiku-20241022', opus: 'claude-3-opus-20240229' }
+    claude: { default: 'claude-sonnet-4-20250514', haiku: 'claude-3-5-haiku-20241022', opus: 'claude-opus-4-20250514' }
   },
   test: { enableLogging: true, saveResponses: false, responseDir: path.join(__dirname, '../responses') },
 };
@@ -113,7 +116,7 @@ module.exports = {
 运行示例后，测试结果将保存在以下位置：
 
 - **控制台输出**: 实时显示请求和响应
-- **日志文件**: `logs/examples.log`
+- **日志文件**: `examples/logs.log`
 - **响应文件**: `examples/responses/` (如果启用)
 
 ### 示例输出格式
@@ -168,11 +171,9 @@ module.exports = {
 启用调试模式获取详细信息：
 
 ```bash
-# 设置调试环境变量
-DEBUG=gemini-code-api:* node examples/gemini/basic-chat.js
 
-# 或者使用日志级别
-LOG_LEVEL=debug node examples/gemini/basic-chat.js
+node examples/gemini/basic-chat.js
+
 ```
 
 ## 📈 性能基准

@@ -13,15 +13,23 @@ const fs = require('fs').promises;
 // 示例配置（批量执行清单需与 responses 目录的目标文件保持一致）
 const EXAMPLES = {
   gemini: [
-    'basic-chat.js',              // gemini-基础对话.json + 衍生
-    'tool-calling.js',            // 天气查询/计算器/多工具/强制工具
-    'streaming-chat.js',          // 流式4类
-    'structured-json.js',         // 仅输出 gemini-structured-json.json
-    'image-analysis-suite.js',    // 图片分析/多图比较/创意生成/技术分析
-    'embeddings.js',              // gemini-embeddings.json
+    'basic-chat.js',              // gemini-基础对话.json
+    'image-upload.js',            // 图片上传和理解
+    'web-access.js',              // 网页内容访问
+    'tool-calling.js',            // 工具调用
+    'multi-turn-chat.js',         // 多轮对话
+    'structured-output.js',       // 结构化输出
+    'long-context.js',            // 长上下文
+    'streaming.js',               // 流式响应
   ],
   claude: [
-    'basic-messages.js',          // 基础/多轮/创意/代码/系统/复杂推理/多语言
+    'basic-messages.js',          // claude-基础消息.json
+    'image-understanding.js',     // 图片理解
+    'tool-use.js',                // 工具使用
+    'multi-turn.js',              // 多轮对话
+    'system-messages.js',         // 系统消息
+    'streaming.js',               // 流式响应
+    'extended-thinking.js',       // Extended Thinking
   ],
 };
 

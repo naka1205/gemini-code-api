@@ -84,7 +84,7 @@ async function testBasicToolUse() {
     }
 
     // 保存响应
-    await saveTestResponse('工具使用', response, {
+    await saveTestResponse('claude-工具使用', response, {
       hasToolUse,
       toolUse: toolUse || null
     });
@@ -181,7 +181,7 @@ async function testMultiToolUse() {
     }
 
     // 保存响应
-    await saveTestResponse('多工具调用', response, {
+    await saveTestResponse('claude-多工具调用', response, {
       toolCount,
       toolUses: toolUses
     });
@@ -263,7 +263,7 @@ async function testForcedToolUse() {
     }
 
     // 保存响应
-    await saveTestResponse('强制工具使用', response, {
+    await saveTestResponse('claude-强制工具使用', response, {
       forcedToolUsed,
       toolUse: toolUse || null
     });
@@ -298,7 +298,7 @@ async function main() {
       
       // 保存响应
       if (result.success && result.response) {
-        await saveTestResponse(test.name.toLowerCase().replace(/\s+/g, '-'), result);
+        await saveTestResponse(`claude-${test.name}`, result);
       }
     } catch (error) {
       logger.error(`${test.name} 测试失败:`, error);

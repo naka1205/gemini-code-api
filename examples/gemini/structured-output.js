@@ -63,7 +63,7 @@ async function testJsonOutput() {
       logger.warn('JSON 格式验证失败，可能包含非 JSON 内容');
     }
 
-    await saveResponse('gemini-structured-json', {
+    await saveResponse('gemini-结构化输出', {
       response: response.text,
       jsonData,
       isValidJson: jsonData !== null

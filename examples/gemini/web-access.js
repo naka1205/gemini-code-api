@@ -33,7 +33,7 @@ async function testWebAccessSummary() {
     const model = config.models.gemini.default;
     const resp = await makeGeminiRequest(model, contents, { maxOutputTokens: 800, temperature: 0.4 });
 
-    await saveResponse('gemini-web-access', { url, summary: resp.text }, {
+    await saveResponse('gemini-网页访问', { url, summary: resp.text }, {
       // 请求详情
     });
     return { success: true, length: resp.text?.length || 0 };

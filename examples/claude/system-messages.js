@@ -13,7 +13,7 @@ async function testSystemMessages() {
       { role: 'user', content: '请为一个前后端分离的电商网站撰写README的大纲。' },
     ];
     const r = await makeClaudeRequest(model, messages, { max_tokens: 700, temperature: 0.4 });
-    await saveResponse('claude-system-messages', { outline: r.text || r }, {
+    await saveResponse('claude-系统消息', { outline: r.text || r }, {
       // 请求详情
     });
     return { success: true };

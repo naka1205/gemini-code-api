@@ -125,7 +125,7 @@ async function testLongDocumentSummarization() {
     });
 
     logger.info('长文档摘要完成');
-    await saveResponse('gemini-long-context-summary', {
+    await saveResponse('gemini-长上下文处理', {
       originalLength: longDocument.length,
       summary: response.text,
       summaryLength: response.text.length
@@ -214,7 +214,7 @@ async function testLongConversationAnalysis() {
     });
 
     logger.info('长对话历史分析完成');
-    await saveResponse('gemini-long-context-conversation', {
+    await saveResponse('gemini-长上下文处理', {
       conversationLength: conversationHistory.length,
       analysis: response.text,
       analysisLength: response.text.length

@@ -44,7 +44,7 @@ async function testMultiTurn() {
     
     logger.info('📥 第二轮响应:', { textLength: turn2Text.length, text: turn2Text.substring(0, 100) + '...' });
 
-    await saveResponse('gemini-multi-turn', { 
+    await saveResponse('gemini-多轮对话', { 
       turn1: turn1Text, 
       turn2: turn2Text,
       fullHistory: history,

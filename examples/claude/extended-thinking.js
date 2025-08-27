@@ -41,7 +41,7 @@ async function testBasicExtendedThinking() {
       logger.info(`思考内容长度: ${thinkingContent.length} 字符`);
     }
     
-    await saveResponse('claude-extended-thinking-basic', { 
+    await saveResponse('claude-深度思考', { 
       response, 
       hasThinking, 
       thinkingLength: thinkingContent.length 
@@ -117,7 +117,7 @@ async function testStreamingExtendedThinking() {
     logger.info(`流式 Extended Thinking 完成，共接收 ${chunkCount} 个数据块`);
     logger.info(`思考内容检查: ${hasThinking ? '✅ 包含' : '❌ 不包含'}`);
     
-    await saveResponse('claude-extended-thinking-streaming', { 
+    await saveResponse('claude-深度思考', { 
       response: fullResponse, 
       chunkCount, 
       hasThinking 
@@ -169,7 +169,7 @@ async function testCustomThinkingBudget() {
       logger.info(`思考内容长度: ${thinkingContent.length} 字符`);
     }
     
-    await saveResponse('claude-extended-thinking-custom-budget', { 
+    await saveResponse('claude-深度思考', { 
       response, 
       hasThinking, 
       thinkingLength: thinkingContent.length,
@@ -217,7 +217,7 @@ async function testDisabledThinking() {
     
     logger.info(`思考内容检查: ${hasThinking ? '❌ 包含（不应该包含）' : '✅ 不包含（正确）'}`);
     
-    await saveResponse('claude-extended-thinking-disabled', { 
+    await saveResponse('claude-深度思考', { 
       response, 
       hasThinking, 
       shouldNotHaveThinking: !hasThinking

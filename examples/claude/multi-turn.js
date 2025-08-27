@@ -17,7 +17,7 @@ async function testMultiTurn() {
     history.push({ role: 'user', content: '加入一段关于跨时区协作的说明，并保持礼貌专业。' });
     const r2 = await makeClaudeRequest(model, history, { max_tokens: 700, temperature: 0.5 });
 
-    await saveResponse('claude-multi-turn', { turn1: r1.text || r1, turn2: r2.text || r2 }, {
+    await saveResponse('claude-多轮对话', { turn1: r1.text || r1, turn2: r2.text || r2 }, {
       // 请求详情
     });
     return { success: true, turns: 2 };

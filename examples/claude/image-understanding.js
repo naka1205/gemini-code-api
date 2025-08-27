@@ -24,7 +24,7 @@ async function testImageUnderstanding() {
       content: `请基于以下占位的图片描述，输出图片要素、场景、风格与可能用途：\n${placeholderDesc}`,
     }];
     const r = await makeClaudeRequest(model, messages, { max_tokens: 600, temperature: 0.4 });
-    await saveResponse('claude-image-understanding', { note: 'degraded without real multimodal', analysis: r.text || r }, {
+    await saveResponse('claude-图片理解', { note: 'degraded without real multimodal', analysis: r.text || r }, {
       // 请求详情
     });
     return { success: true, degraded: true };

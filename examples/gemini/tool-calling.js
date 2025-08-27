@@ -407,7 +407,7 @@ async function main() {
         results[test.name] = result;
         
         // 保存响应（如果启用）
-        await saveResponse(`gemini-${test.name.toLowerCase().replace(/\s+/g, '-')}`, result.response, {
+        await saveResponse(`gemini-${test.name}`, result.response, {
           model: getModelConfig('gemini', 'default'),
           testType: test.name,
           hasFunctionCalls: !!(result.functionCall || result.functionCalls?.length),
