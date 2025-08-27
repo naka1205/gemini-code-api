@@ -107,12 +107,132 @@ class LogBatcher {
     if (!LOGGER_CONFIG.ENABLE_DATABASE) return;
 
     try {
-      // 这里应该调用数据库操作函数
-      // await insertRequestLogs(entries);
+      // 获取数据库操作实例
+      const dbOps = await this.getDatabaseOperations();
+      if (!dbOps) {
+        log.warn('Database operations not available, skipping log write');
+        return;
+      }
+
+      // 批量写入请求日志
+      for (const entry of entries) {
+        await this.writeLogEntryToDatabase(dbOps, entry);
+      }
+
       log.debug(`Batch logged ${entries.length} entries to database`);
     } catch (error) {
       log.error('Database logging error:', error as Error);
       // 可以考虑将失败的日志写入文件或重试队列
+    }
+  }
+
+  /**
+   * 获取数据库操作实例
+   */
+  private async getDatabaseOperations(): Promise<import('../database/operations.js').DatabaseOperations | null> {
+    try {
+      // 动态导入以避免循环依赖
+      const { DatabaseOperations } = await import('../database/operations.js');
+      // 暂时返回null，避免循环依赖
+      log.warn('Database operations temporarily disabled to avoid circular dependency');
+      return null;
+    } catch (error) {
+      log.warn('Failed to get database operations', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 将日志条目写入数据库
+   */
+  private async writeLogEntryToDatabase(dbOps: any, entry: LogEntry): Promise<void> {
+    try {
+      // 转换日志条目为数据库格式
+      const logData = {
+        requestId: entry.requestId,
+        timestamp: entry.timestamp,
+        method: entry.method,
+        path: entry.path,
+        clientType: entry.clientType || 'unknown',
+        clientIP: entry.clientIp || 'unknown',
+        userAgent: entry.userAgent || '',
+        apiKeyHash: entry.apiKeyHash || '',
+        model: entry.model || '',
+        originalModel: entry.model || '',
+        endpoint: entry.path,
+        responseTime: entry.responseTime || 0,
+        statusCode: entry.statusCode || 0,
+        inputTokens: entry.tokenUsage?.promptTokens || 0,
+        outputTokens: entry.tokenUsage?.completionTokens || 0,
+        totalTokens: entry.tokenUsage?.totalTokens || 0,
+        isStream: false, // 需要从请求上下文获取
+        hasError: !!entry.error,
+        errorMessage: entry.error || '',
+        requestSize: entry.requestSize || 0,
+        responseSize: entry.responseSize || 0,
+      };
+
+      // 写入请求日志
+      await dbOps.logRequest(logData);
+
+      // 如果有错误，记录错误日志
+      if (entry.error) {
+        await dbOps.logError({
+          errorType: 'request_error',
+          errorMessage: entry.error,
+          requestId: entry.requestId,
+          clientType: entry.clientType || 'unknown',
+          clientIP: entry.clientIp || 'unknown',
+          endpoint: entry.path,
+          method: entry.method,
+          statusCode: entry.statusCode || 500,
+          userAgent: entry.userAgent || '',
+          apiKeyHash: entry.apiKeyHash || '',
+        });
+      }
+
+      // 更新API密钥指标
+      if (entry.apiKeyHash) {
+        await this.updateApiKeyMetrics(dbOps, entry);
+      }
+
+    } catch (error) {
+      log.error('Failed to write log entry to database', error as Error, {
+        requestId: entry.requestId,
+        error: entry.error
+      });
+    }
+  }
+
+  /**
+   * 更新API密钥指标
+   */
+  private async updateApiKeyMetrics(dbOps: any, entry: LogEntry): Promise<void> {
+    try {
+      const isSuccess = !entry.error && (entry.statusCode || 0) < 400;
+      const responseTime = entry.responseTime || 0;
+      const tokenCount = entry.tokenUsage?.totalTokens || 0;
+
+      await dbOps.updateApiKeyMetrics(entry.apiKeyHash!, {
+        totalRequests: isSuccess ? 1 : 0,
+        successfulRequests: isSuccess ? 1 : 0,
+        failedRequests: isSuccess ? 0 : 1,
+        averageResponseTime: responseTime,
+        lastResponseTime: responseTime,
+        totalTokens: tokenCount,
+        totalInputTokens: entry.tokenUsage?.promptTokens || 0,
+        totalOutputTokens: entry.tokenUsage?.completionTokens || 0,
+        lastUsed: entry.timestamp,
+        isHealthy: isSuccess,
+        consecutiveFailures: isSuccess ? 0 : 1,
+      });
+    } catch (error) {
+      log.warn('Failed to update API key metrics', {
+        error: error instanceof Error ? error.message : String(error),
+        apiKeyHash: entry.apiKeyHash
+      });
     }
   }
 

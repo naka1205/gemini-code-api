@@ -3,7 +3,7 @@
  * 支持加密KEY存储和查询
  */
 import { eq, desc, gte, lte, and, count } from 'drizzle-orm';
-import type { DrizzleD1Database } from 'drizzle-orm/d1';
+import { drizzle } from 'drizzle-orm/d1';
 import { 
   requestLogs, 
   apiKeyMetrics, 
@@ -22,7 +22,7 @@ import type { ClientType, DatabaseResult, QueryOptions } from '../types/index.js
 import { generateId, hashApiKey } from '../utils/index.js';
 
 export class DatabaseOperations {
-  constructor(private db: DrizzleD1Database) {}
+  constructor(private db: ReturnType<typeof drizzle>) {}
 
   // === 请求日志操作 ===
 
@@ -229,7 +229,7 @@ export class DatabaseOperations {
         .from(apiKeyMetrics)
         .where(eq(apiKeyMetrics.isHealthy, true));
 
-      return { success: true, data: results.map(r => r.keyHash) };
+      return { success: true, data: results.map((r: { keyHash: string }) => r.keyHash) };
     } catch (error) {
       return { 
         success: false, 

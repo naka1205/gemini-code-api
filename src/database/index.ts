@@ -7,3 +7,6 @@ export * from './schema.js';
 
 // 数据库操作
 export * from './operations.js';
+
+// 数据库管理器
+export * from './manager.js';

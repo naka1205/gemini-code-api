@@ -4,8 +4,9 @@
  */
 import type { Context } from 'hono';
 import type { ClientType } from '../../types/index.js';
-import { getGlobalSelector } from '../../services/load-balancer/selector.js';
-import { getGlobalMetricsCollector } from '../../services/load-balancer/metrics.js';
+// 注意：旧的load-balancer已被新的SmartLoadBalancer替代
+// import { getGlobalSelector } from '../../services/load-balancer/selector.js';
+// import { getGlobalMetricsCollector } from '../../services/load-balancer/metrics.js';
 import { httpClient } from '../../services/http/client.js';
 import { throwError } from '../../middleware/error-handler.js';
 import { logApiMetrics } from '../../middleware/logger.js';
@@ -55,8 +56,9 @@ export interface StreamingAdapterResult {
  */
 export abstract class BaseAdapter {
   protected clientType: ClientType;
-  protected selector = getGlobalSelector();
-  protected metricsCollector = getGlobalMetricsCollector();
+  // 注意：旧的load-balancer已被新的SmartLoadBalancer替代
+  // protected selector = getGlobalSelector();
+  // protected metricsCollector = getGlobalMetricsCollector();
 
   constructor(clientType: ClientType) {
     this.clientType = clientType;
@@ -172,7 +174,16 @@ export abstract class BaseAdapter {
       throwError.authentication('No API keys provided');
     }
 
-    const selection = this.selector.selectApiKey(context.apiKeys);
+    // 注意：旧的load-balancer已被新的SmartLoadBalancer替代
+    // const selection = this.selector.selectApiKey(context.apiKeys);
+    
+    // 临时使用第一个API密钥
+    const selection = {
+      selectedKey: context.apiKeys[0],
+      selectedKeyHash: 'temp-hash',
+      availableKeys: context.apiKeys.length,
+      healthyKeys: context.apiKeys.length,
+    };
     
     // 更新上下文
     context.context.set('selectedKey', selection.selectedKey);
@@ -247,13 +258,14 @@ export abstract class BaseAdapter {
     success: boolean,
     tokenUsage?: any
   ): void {
-    if (context.selectedKey) {
-      this.metricsCollector.recordRequest(
-        context.selectedKey,
-        responseTime,
-        success
-      );
-    }
+    // 注意：旧的load-balancer已被新的SmartLoadBalancer替代
+    // if (context.selectedKey) {
+    //   this.metricsCollector.recordRequest(
+    //     context.selectedKey,
+    //     responseTime,
+    //     success
+    //   );
+    // }
 
     // 记录到日志
     logApiMetrics(

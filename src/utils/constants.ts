@@ -115,6 +115,14 @@ export const SYSTEM_LIMITS = {
   REQUEST_TIMEOUT: 300000, // 5分钟
 } as const;
 
+// 免费方案速率限制配置
+export const FREE_TIER_LIMITS = {
+  'gemini-2.5-pro': { rpm: 5, tpm: 250000, rpd: 100 },
+  'gemini-2.5-flash': { rpm: 10, tpm: 250000, rpd: 250 },
+  'gemini-2.0-flash': { rpm: 15, tpm: 1000000, rpd: 200 },
+  'text-embedding-004': { rpm: 100, tpm: 1000000, rpd: 1000 },
+} as const;
+
 // 错误消息模板
 export const ERROR_MESSAGES = {
   NO_API_KEY: 'API key is required. Please provide a valid Gemini API key.',
