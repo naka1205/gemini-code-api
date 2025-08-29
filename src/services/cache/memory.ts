@@ -10,13 +10,21 @@ import { getGlobalCacheManager } from './manager.js';
 /**
  * 内存缓存类
  */
+type DoublyLinkedNode = {
+  key: string;
+  prev: DoublyLinkedNode | null;
+  next: DoublyLinkedNode | null;
+};
+
 export class MemoryCache<T = any> {
   private cache = new Map<string, CacheItem<T>>();
-  private accessOrder = new Map<string, number>(); // LRU访问顺序
+  // O(1) LRU：使用双向链表维护最近使用顺序（头部=最新，尾部=最旧）
+  private nodeMap = new Map<string, DoublyLinkedNode>();
+  private lruHead: DoublyLinkedNode | null = null;
+  private lruTail: DoublyLinkedNode | null = null;
   private config: CacheConfig;
   private stats: CacheStats;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  private accessCounter = 0;
   private cacheManager = getGlobalCacheManager();
 
   constructor(config: Partial<CacheConfig> = {}) {
@@ -73,7 +81,7 @@ export class MemoryCache<T = any> {
     };
 
     this.cache.set(key, item);
-    this.accessOrder.set(key, ++this.accessCounter);
+    this.touchLRU(key);
     
     // 通知缓存管理器内存使用变化
     this.cacheManager.recordMemoryUsage(size);
@@ -104,7 +112,7 @@ export class MemoryCache<T = any> {
     // 更新访问信息
     item.accessCount++;
     item.lastAccessed = Date.now();
-    this.accessOrder.set(key, ++this.accessCounter);
+    this.touchLRU(key);
 
     this.stats.hits++;
     this.updateHitRate();
@@ -142,8 +150,9 @@ export class MemoryCache<T = any> {
    */
   clear(): void {
     this.cache.clear();
-    this.accessOrder.clear();
-    this.accessCounter = 0;
+    this.nodeMap.clear();
+    this.lruHead = null;
+    this.lruTail = null;
     this.stats.size = 0;
     this.stats.memoryUsage = 0;
     this.updateHitRate();
@@ -206,7 +215,7 @@ export class MemoryCache<T = any> {
     }
 
     this.cache.delete(key);
-    this.accessOrder.delete(key);
+    this.removeNode(key);
     this.stats.memoryUsage -= item.size;
     
     // 通知缓存管理器内存释放
@@ -218,24 +227,12 @@ export class MemoryCache<T = any> {
   }
 
   private evictLRU(requiredSpace: number = 0): void {
-    // 找到最少使用的项并删除
-    let oldestKey: string | null = null;
-    let oldestAccess = Infinity;
-
-    for (const [key, accessTime] of this.accessOrder.entries()) {
-      if (accessTime < oldestAccess) {
-        oldestAccess = accessTime;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.deleteInternal(oldestKey);
-      
-      // 如果需要更多空间，继续删除
-      if (requiredSpace > 0 && this.stats.memoryUsage + requiredSpace > this.config.maxMemoryUsage) {
-        this.evictLRU(requiredSpace);
-      }
+    // 从链表尾部开始逐个淘汰
+    while (this.lruTail && (requiredSpace === 0 || this.stats.memoryUsage + requiredSpace > this.config.maxMemoryUsage)) {
+      const keyToRemove = this.lruTail.key;
+      this.deleteInternal(keyToRemove);
+      // 循环条件会在 deleteInternal 中更新 memoryUsage
+      if (requiredSpace === 0) break; // 单步淘汰（容量满时）
     }
   }
 
@@ -304,6 +301,40 @@ export class MemoryCache<T = any> {
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpired();
     }, this.config.cleanupInterval);
+  }
+
+  // === LRU 辅助 ===
+  private touchLRU(key: string): void {
+    let node = this.nodeMap.get(key);
+    if (!node) {
+      node = { key, prev: null, next: null };
+      this.nodeMap.set(key, node);
+    }
+    // 若存在于中间，先断开
+    if (node.prev || node.next || this.lruHead === node) {
+      this.detach(node);
+    }
+    // 插到头部
+    node.prev = null;
+    node.next = this.lruHead;
+    if (this.lruHead) this.lruHead.prev = node;
+    this.lruHead = node;
+    if (!this.lruTail) this.lruTail = node;
+  }
+
+  private removeNode(key: string): void {
+    const node = this.nodeMap.get(key);
+    if (!node) return;
+    this.detach(node);
+    this.nodeMap.delete(key);
+  }
+
+  private detach(node: DoublyLinkedNode): void {
+    const { prev, next } = node;
+    if (prev) prev.next = next; else this.lruHead = next;
+    if (next) next.prev = prev; else this.lruTail = prev;
+    node.prev = null;
+    node.next = null;
   }
 }
 

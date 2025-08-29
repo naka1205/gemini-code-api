@@ -554,6 +554,7 @@ async function handleStreamingChatCompletion(
       } finally {
         // 清理usage buffer
         buf = "";
+        try { reader.releaseLock(); } catch {}
       }
     })();
 

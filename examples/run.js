@@ -49,29 +49,29 @@ async function runExample(type, filename) {
   return new Promise((resolve) => {
     const examplePath = path.join(__dirname, type, filename);
     const startTime = Date.now();
-    
+
     console.log(`\n🚀 运行 ${type}/${filename}...`);
-    
+
     const child = spawn('node', [examplePath], {
       stdio: ['inherit', 'pipe', 'pipe'],
       env: { ...process.env, NODE_ENV: 'test' },
     });
-    
+
     let stdout = '';
     let stderr = '';
-    
+
     child.stdout.on('data', (data) => {
       stdout += data.toString();
     });
-    
+
     child.stderr.on('data', (data) => {
       stderr += data.toString();
     });
-    
+
     child.on('close', (code) => {
       const duration = Date.now() - startTime;
       const success = code === 0;
-      
+
       if (success) {
         console.log(`✅ ${type}/${filename} 成功 (${duration}ms)`);
         results.passed++;
@@ -80,7 +80,7 @@ async function runExample(type, filename) {
         console.log(`错误信息: ${stderr}`);
         results.failed++;
       }
-      
+
       results.total++;
       results.details[`${type}/${filename}`] = {
         success,
@@ -89,10 +89,10 @@ async function runExample(type, filename) {
         stdout: stdout.slice(-500), // 只保留最后500字符
         stderr,
       };
-      
+
       resolve();
     });
-    
+
     child.on('error', (error) => {
       console.log(`❌ ${type}/${filename} 启动失败: ${error.message}`);
       results.failed++;
@@ -125,9 +125,9 @@ async function checkFileExists(filepath) {
  */
 async function runAllExamples() {
   console.log('🚀 开始运行所有示例...\n');
-  
+
   const startTime = Date.now();
-  
+
   // 运行 Gemini 示例
   console.log('🔵 运行 Gemini 示例:');
   for (const filename of EXAMPLES.gemini) {
@@ -141,7 +141,7 @@ async function runAllExamples() {
       results.skipped++;
     }
   }
-  
+
   // 运行 Claude 示例
   console.log('\n🟣 运行 Claude 示例:');
   for (const filename of EXAMPLES.claude) {
@@ -155,9 +155,9 @@ async function runAllExamples() {
       results.skipped++;
     }
   }
-  
+
   const totalDuration = Date.now() - startTime;
-  
+
   // 输出总结
   console.log('\n📊 测试总结:');
   console.log('─'.repeat(60));
@@ -167,7 +167,7 @@ async function runAllExamples() {
   console.log(`跳过: ${results.skipped} ⏭️`);
   console.log(`成功率: ${results.total > 0 ? ((results.passed / results.total) * 100).toFixed(1) : 0}%`);
   console.log(`总耗时: ${totalDuration}ms`);
-  
+
   // 输出失败详情
   if (results.failed > 0) {
     console.log('\n❌ 失败详情:');
@@ -177,7 +177,7 @@ async function runAllExamples() {
       }
     }
   }
-  
+
   // 保存结果到文件
   try {
     const resultFile = path.join(__dirname, 'test-results.json');
@@ -193,12 +193,12 @@ async function runAllExamples() {
       },
       details: results.details,
     }, null, 2));
-    
+
     console.log(`\n💾 测试结果已保存到: ${resultFile}`);
   } catch (error) {
     console.log(`\n⚠️  保存测试结果失败: ${error.message}`);
   }
-  
+
   // 返回退出码
   process.exit(results.failed > 0 ? 1 : 0);
 }
@@ -212,11 +212,11 @@ async function runTypeExamples(type) {
     console.log(`支持的类型: ${Object.keys(EXAMPLES).join(', ')}`);
     process.exit(1);
   }
-  
+
   console.log(`🚀 开始运行 ${type} 示例...\n`);
-  
+
   const startTime = Date.now();
-  
+
   for (const filename of EXAMPLES[type]) {
     const filepath = path.join(__dirname, type, filename);
     if (await checkFileExists(filepath)) {
@@ -228,9 +228,9 @@ async function runTypeExamples(type) {
       results.skipped++;
     }
   }
-  
+
   const totalDuration = Date.now() - startTime;
-  
+
   // 输出总结
   console.log(`\n📊 ${type} 测试总结:`);
   console.log('─'.repeat(60));
@@ -240,7 +240,7 @@ async function runTypeExamples(type) {
   console.log(`跳过: ${results.skipped} ⏭️`);
   console.log(`成功率: ${results.total > 0 ? ((results.passed / results.total) * 100).toFixed(1) : 0}%`);
   console.log(`总耗时: ${totalDuration}ms`);
-  
+
   process.exit(results.failed > 0 ? 1 : 0);
 }
 
@@ -252,39 +252,30 @@ function showHelp() {
 🚀 Gemini Code API 示例运行器
 
 用法:
-  node run-all.js                    # 运行所有示例
-  node run-all.js gemini            # 只运行 Gemini 示例
-  node run-all.js claude            # 只运行 Claude 示例
-  node run-all.js --help            # 显示帮助信息
-
-环境变量:
-  确保设置了以下环境变量:
-  - GEMINI_API_KEY: Gemini API 密钥
-  - CLAUDE_API_KEY: Claude API 密钥 (可选)
-  - API_BASE_URL: API 端点 (默认: http://localhost:8787)
+  node run.js                    # 运行所有示例
+  node run.js gemini            # 只运行 Gemini 示例
+  node run.js claude            # 只运行 Claude 示例
+  node run.js --help            # 显示帮助信息
 
 示例:
-  # 设置环境变量
-  export GEMINI_API_KEY="your_key_here"
-  export CLAUDE_API_KEY="your_key_here"
   
   # 运行所有示例
-  node run-all.js
+  node run.js
   
   # 只运行 Gemini 示例
-  node run-all.js gemini
+  node run.js gemini
 `);
 }
 
 // 主函数
 async function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.includes('--help') || args.includes('-h')) {
     showHelp();
     return;
   }
-  
+
   if (args.length === 0) {
     // 运行所有示例
     await runAllExamples();

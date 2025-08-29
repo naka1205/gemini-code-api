@@ -80,16 +80,29 @@ preview_id = "your-preview-kv-id"
 [build]
 command = "npm run build"
 
-# 环境变量（可选）
-[vars]
-ENVIRONMENT = "production"
-LOG_LEVEL = "info"
-
-# 路由配置（可选）
-routes = [
-  { pattern = "api.yourdomain.com/*", zone_name = "yourdomain.com" }
-]
 ```
+
+### Cloudflare 平台绑定说明（重要）
+
+- 本项目运行于 Cloudflare Workers，所用到的 `KV` 与 `DB` 为平台“绑定”（Bindings），不是传统意义的环境变量。
+- 这些绑定在 `wrangler.toml` 中通过 `binding` 字段显式声明，运行时以 `c.env.KV`、`c.env.DB`（或 `env.KV`、`env.DB`）注入。
+- 请勿在代码中使用 `process.env`。Workers 运行时不提供 Node 进程级环境变量，且本项目采用“纯代理模式”，不需要也不应设置服务端 API Key。
+- 参考：
+  - Cloudflare KV Binding 文档（`https://developers.cloudflare.com/kv/get-started/#configure-your-worker`）
+  - Cloudflare D1 Binding 文档（`https://developers.cloudflare.com/d1/platform/client-api/#bindings`）
+
+### 本项目常量配置
+
+项目在 `src/utils/constants.ts` 中集中定义了运行时常量，包括：
+
+```ts
+export const STORAGE_CONFIG = {
+  KV_NAMESPACE: 'KV',  // 对应 wrangler.toml [[kv_namespaces]].binding
+  D1_DATABASE: 'DB',   // 对应 wrangler.toml [[d1_databases]].binding
+} as const;
+```
+
+这些常量仅用于标注绑定名称，最终仍以 Cloudflare 绑定为准，无需用户在环境中再次配置。
 
 ### drizzle.config.ts
 
@@ -136,39 +149,6 @@ TypeScript编译配置：
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
-```
-
-## 🔑 环境变量配置
-
-### 必需环境变量
-
-```bash
-# Cloudflare Workers环境变量
-CLOUDFLARE_ACCOUNT_ID=your-account-id
-CLOUDFLARE_API_TOKEN=your-api-token
-
-# 数据库配置
-DATABASE_ID=your-database-id
-KV_NAMESPACE_ID=your-kv-namespace-id
-```
-
-### 可选环境变量
-
-```bash
-# 日志级别
-LOG_LEVEL=info  # debug, info, warn, error
-
-# 缓存配置
-CACHE_TTL=3600000
-MAX_CACHE_SIZE=1000
-
-# 性能配置
-MAX_CONCURRENT_REQUESTS=100
-REQUEST_TIMEOUT=30000
-
-# 安全配置
-ENABLE_RATE_LIMITING=true
-MAX_REQUESTS_PER_MINUTE=1000
 ```
 
 ## 🗄️ 数据库配置
@@ -430,16 +410,6 @@ fi
 
 echo "✅ 配置文件检查通过"
 
-# 检查环境变量
-echo "🔑 检查环境变量..."
-if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-    echo "⚠️  警告: CLOUDFLARE_ACCOUNT_ID 未设置"
-fi
-
-if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-    echo "⚠️  警告: CLOUDFLARE_API_TOKEN 未设置"
-fi
-
 # 验证配置语法
 echo "🔧 验证配置语法..."
 npm run type-check
@@ -466,6 +436,6 @@ echo "🎉 配置验证完成！"
 如果遇到配置问题，请：
 
 1. 检查配置语法和格式
-2. 验证环境变量设置
+2. 验证常量设置参数
 3. 查看 [Cloudflare Workers 文档](https://developers.cloudflare.com/workers/)
 4. 提交 [GitHub Issue](https://github.com/your-repo/issues)

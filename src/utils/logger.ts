@@ -87,10 +87,12 @@ export class ProductionLogger implements Logger {
 
     const timestamp = new Date(entry.timestamp).toISOString();
     const levelName = LogLevel[entry.level];
-    const contextStr = entry.context ? ` ${JSON.stringify(entry.context)}` : '';
-    const errorStr = entry.error ? ` ${entry.error.stack || entry.error.message}` : '';
+    const maskedContext = entry.context ? maskSensitiveData(entry.context) : undefined;
+    const contextStr = maskedContext ? ` ${JSON.stringify(maskedContext)}` : '';
+    const maskedError = entry.error ? new Error(maskSensitiveString(entry.error.stack || entry.error.message)) : undefined;
+    const errorStr = maskedError ? ` ${maskedError.stack || maskedError.message}` : '';
     
-    const logMessage = `[${timestamp}] ${levelName}: ${entry.message}${contextStr}${errorStr}`;
+    const logMessage = `[${timestamp}] ${levelName}: ${maskSensitiveString(entry.message)}${contextStr}${errorStr}`;
 
     switch (entry.level) {
       case LogLevel.DEBUG:
@@ -105,6 +107,51 @@ export class ProductionLogger implements Logger {
         break;
     }
   }
+}
+
+/**
+ * 脱敏字符串中的敏感信息（如 Google API Key 等）
+ */
+function maskSensitiveString(input: string): string {
+  if (!input) return input;
+  let masked = input;
+  // Google API Key（AIza 开头 39 字符长度常见）
+  masked = masked.replace(/AIza[0-9A-Za-z\-_]{35}/g, 'AIza***MASKED***');
+  // Bearer Token（常见 Authorization）
+  masked = masked.replace(/Bearer\s+([A-Za-z0-9_\-\.]{10,})/gi, 'Bearer ***MASKED***');
+  // x-api-key 风格
+  masked = masked.replace(/x-api-key\s*[:=]\s*([A-Za-z0-9_\-\.]{10,})/gi, 'x-api-key: ***MASKED***');
+  // x-goog-api-key
+  masked = masked.replace(/x-goog-api-key\s*[:=]\s*([A-Za-z0-9_\-\.]{10,})/gi, 'x-goog-api-key: ***MASKED***');
+  return masked;
+}
+
+/**
+ * 深度脱敏对象中的敏感字段
+ */
+function maskSensitiveData<T>(data: T): T {
+  if (data == null) return data;
+  if (typeof data === 'string') {
+    return maskSensitiveString(data) as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => maskSensitiveData(item)) as unknown as T;
+  }
+  if (typeof data === 'object') {
+    const masked: Record<string, any> = Array.isArray(data) ? [] : {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      const lowerKey = key.toLowerCase();
+      if (['authorization', 'x-api-key', 'x-goog-api-key', 'api_key', 'apikey', 'token', 'access_token'].includes(lowerKey)) {
+        masked[key] = typeof value === 'string' ? '***MASKED***' : maskSensitiveData(value);
+      } else if (typeof value === 'string') {
+        masked[key] = maskSensitiveString(value);
+      } else {
+        masked[key] = maskSensitiveData(value);
+      }
+    }
+    return masked as unknown as T;
+  }
+  return data;
 }
 
 /**

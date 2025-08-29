@@ -211,11 +211,25 @@ export function createHealthRoutes(): Hono {
    */
   app.get('/performance', async (c: Context) => {
     try {
-      // 这里可以添加性能监控器的状态检查
+      const monitor = getGlobalPerformanceMonitor();
+      const window5m = monitor.getAggregatedMetrics(5);
+      const stats = monitor.getPerformanceStats();
       return c.json({
-        timestamp: Date.now(),
-        message: 'Performance monitoring available',
         status: 'operational',
+        timestamp: Date.now(),
+        windowMinutes: 5,
+        aggregate: window5m,
+        stats: {
+          totalRequests: stats.totalRequests,
+          totalErrors: stats.totalErrors,
+          averageResponseTime: stats.averageResponseTime,
+          p50ResponseTime: stats.p50ResponseTime,
+          p95ResponseTime: stats.p95ResponseTime,
+          p99ResponseTime: stats.p99ResponseTime,
+          kvOperations: stats.kvOperations,
+          dbOperations: stats.dbOperations,
+          activeAlerts: stats.activeAlerts,
+        },
       });
     } catch (error) {
       return c.json({

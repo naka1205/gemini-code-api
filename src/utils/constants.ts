@@ -158,3 +158,9 @@ export const MEMORY_CACHE_CONFIG = {
   CLEANUP_INTERVAL: 300000,           // 清理间隔5分钟
   MAX_MEMORY_USAGE: 50 * 1024 * 1024, // 最大内存使用50MB
 } as const;
+
+// 存储绑定名称（Cloudflare 平台绑定，不属于用户可配置的环境变量）
+export const STORAGE_CONFIG = {
+  KV_NAMESPACE: 'KV',        // 对应 wrangler.toml 中 [[kv_namespaces]].binding
+  D1_DATABASE: 'DB',         // 对应 wrangler.toml 中 [[d1_databases]].binding
+} as const;

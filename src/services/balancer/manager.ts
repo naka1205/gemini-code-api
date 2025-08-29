@@ -209,13 +209,10 @@ export class QuotaManager {
     reason: string | undefined;
     score: number; // 配额评分，越高越好
   }>> {
-    const results = [];
-    
-    for (const apiKey of apiKeys) {
+    // 并行计算所有密钥的配额状态
+    const tasks = apiKeys.map(async (apiKey) => {
       const keyHash = hashApiKey(apiKey);
       const quotaCheck = await this.hasQuotaAvailable(apiKey, model, 0, limits);
-      
-      // 计算配额评分
       let score = 0;
       if (quotaCheck.available) {
         const rpmScore = (limits.rpm - quotaCheck.usage.rpm) / limits.rpm;
@@ -223,18 +220,17 @@ export class QuotaManager {
         const rpdScore = (limits.rpd - quotaCheck.usage.rpd) / limits.rpd;
         score = (rpmScore + tpmScore + rpdScore) / 3;
       }
-      
-      results.push({
+      return {
         apiKey,
         keyHash,
         usage: quotaCheck.usage,
         isAvailable: quotaCheck.available,
         reason: quotaCheck.reason,
         score,
-      });
-    }
-    
-    // 按评分排序，评分高的在前
+      };
+    });
+
+    const results = await Promise.all(tasks);
     return results.sort((a, b) => b.score - a.score);
   }
 
@@ -288,6 +284,9 @@ export class QuotaManager {
     const totalTokens = inputTokens + outputTokens;
     
     try {
+      // 事务开始
+      await this.db.prepare('BEGIN').run();
+
       // 插入请求日志（补全非空字段并生成ID）
       // 注意：此处缺少请求上下文（client_type、client_ip、endpoint 等），
       // 先使用安全的占位默认值，后续在路由层补充真实值。
@@ -360,7 +359,10 @@ export class QuotaManager {
         totalTokens,
         timestamp: now,
       });
-      
+
+      // 事务提交
+      await this.db.prepare('COMMIT').run();
+
       log.debug('Usage recorded successfully', {
         keyHash: keyHash.substring(0, 8) + '...',
         model,
@@ -370,6 +372,7 @@ export class QuotaManager {
       });
       
     } catch (error) {
+      try { await this.db.prepare('ROLLBACK').run(); } catch {}
       log.error('Error recording usage', error instanceof Error ? error : undefined, {
         keyHash: keyHash.substring(0, 8) + '...',
         model,

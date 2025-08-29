@@ -85,7 +85,7 @@ class LogBatcher {
 
     // 控制台输出（如果启用）
     if (LOGGER_CONFIG.ENABLE_CONSOLE) {
-      entries.forEach(entry => this.logToConsole(entry));
+      entries.forEach(entry => this.logToConsole(this.maskEntry(entry)));
     }
   }
 
@@ -149,7 +149,7 @@ class LogBatcher {
    */
   private async writeLogEntryToDatabase(dbOps: any, entry: LogEntry): Promise<void> {
     try {
-      // 转换日志条目为数据库格式
+      // 转换日志条目为数据库格式（仅写入脱敏后的字段）
       const logData = {
         requestId: entry.requestId,
         timestamp: entry.timestamp,
@@ -169,7 +169,7 @@ class LogBatcher {
         totalTokens: entry.tokenUsage?.totalTokens || 0,
         isStream: false, // 需要从请求上下文获取
         hasError: !!entry.error,
-        errorMessage: entry.error || '',
+        errorMessage: entry.error ? this.maskString(entry.error) : '',
         requestSize: entry.requestSize || 0,
         responseSize: entry.responseSize || 0,
       };
@@ -181,7 +181,7 @@ class LogBatcher {
       if (entry.error) {
         await dbOps.logError({
           errorType: 'request_error',
-          errorMessage: entry.error,
+          errorMessage: this.maskString(entry.error),
           requestId: entry.requestId,
           clientType: entry.clientType || 'unknown',
           clientIP: entry.clientIp || 'unknown',
@@ -243,7 +243,8 @@ class LogBatcher {
     const { level, requestId, method, path, statusCode, responseTime, error } = entry;
     
     const timestamp = new Date(entry.timestamp).toISOString();
-    const logMessage = `[${timestamp}] ${requestId} ${method} ${path} ${statusCode || 'PENDING'}${responseTime ? ` ${responseTime}ms` : ''}${error ? ` ERROR: ${error}` : ''}`;
+    const maskedError = error ? this.maskString(error) : undefined;
+    const logMessage = `[${timestamp}] ${requestId} ${method} ${path} ${statusCode || 'PENDING'}${responseTime ? ` ${responseTime}ms` : ''}${maskedError ? ` ERROR: ${maskedError}` : ''}`;
 
     switch (level) {
       case LogLevel.ERROR:
@@ -260,6 +261,28 @@ class LogBatcher {
     }
   }
 }
+
+// === 脱敏工具 ===
+function maskString(input: string): string {
+  if (!input) return input;
+  let masked = input;
+  masked = masked.replace(/AIza[0-9A-Za-z\-_]{35}/g, 'AIza***MASKED***');
+  masked = masked.replace(/Bearer\s+([A-Za-z0-9_\-\.]{10,})/gi, 'Bearer ***MASKED***');
+  masked = masked.replace(/x-api-key\s*[:=]\s*([A-Za-z0-9_\-\.]{10,})/gi, 'x-api-key: ***MASKED***');
+  masked = masked.replace(/x-goog-api-key\s*[:=]\s*([A-Za-z0-9_\-\.]{10,})/gi, 'x-goog-api-key: ***MASKED***');
+  return masked;
+}
+
+// 为 LogBatcher 实例方法提供访问
+(LogBatcher.prototype as any).maskString = maskString;
+(LogBatcher.prototype as any).maskEntry = function(entry: LogEntry): LogEntry {
+  const e: LogEntry = { ...entry };
+  if (e.error) e.error = maskString(e.error);
+  if (e.userAgent) e.userAgent = maskString(e.userAgent);
+  if (e.origin) e.origin = maskString(e.origin as string);
+  if (e.referer) e.referer = maskString(e.referer as string);
+  return e;
+};
 
 /**
  * 全局日志批处理器

@@ -314,12 +314,17 @@ export class PerformanceMonitor {
     totalRequests: number;
     totalErrors: number;
     averageResponseTime: number;
+    p50ResponseTime: number;
+    p95ResponseTime: number;
+    p99ResponseTime: number;
     kvOperations: number;
     dbOperations: number;
     activeAlerts: number;
   } {
     const recentMetrics = this.getRecentMetrics(5);
     const activeAlerts = this.getActiveAlerts();
+    const latencies = recentMetrics.map(m => m.responseTime).filter(v => typeof v === 'number' && v > 0);
+    const { p50, p95, p99 } = computePercentiles(latencies);
 
     return {
       totalRequests: recentMetrics.reduce((sum, m) => sum + m.requestCount, 0),
@@ -327,6 +332,9 @@ export class PerformanceMonitor {
       averageResponseTime: recentMetrics.length > 0 
         ? recentMetrics.reduce((sum, m) => sum + m.responseTime, 0) / recentMetrics.length 
         : 0,
+      p50ResponseTime: p50,
+      p95ResponseTime: p95,
+      p99ResponseTime: p99,
       kvOperations: recentMetrics.reduce((sum, m) => sum + m.kvReads + m.kvWrites, 0),
       dbOperations: recentMetrics.reduce((sum, m) => sum + m.dbQueries, 0),
       activeAlerts: activeAlerts.length,
@@ -379,4 +387,17 @@ export function getGlobalPerformanceMonitor(): PerformanceMonitor {
     globalPerformanceMonitor = new PerformanceMonitor();
   }
   return globalPerformanceMonitor;
+}
+
+// === 工具函数：计算百分位 ===
+function computePercentiles(values: number[]): { p50: number; p95: number; p99: number } {
+  if (!values || values.length === 0) {
+    return { p50: 0, p95: 0, p99: 0 };
+  }
+  const arr = [...values].sort((a, b) => a - b);
+  const get = (p: number) => {
+    const idx = Math.ceil((p / 100) * arr.length) - 1;
+    return arr[Math.max(0, Math.min(arr.length - 1, idx))];
+  };
+  return { p50: get(50), p95: get(95), p99: get(99) };
 }

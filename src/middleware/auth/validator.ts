@@ -31,7 +31,7 @@ export interface BatchValidationResult {
 export class ApiKeyValidator {
   /**
    * 验证单个API KEY
-   * 简化验证：只检查是否以'AI'开头
+   * 严格验证：支持 Google Gemini 风格 KEY（以 AIza 开头，长度 39）以及宽松兼容
    */
   validateApiKey(apiKey: string, _clientType?: ClientType): ValidationResult {
     // 基础检查：空值和类型
@@ -51,19 +51,25 @@ export class ApiKeyValidator {
       };
     }
 
-    // 简化验证：只检查是否以'AI'开头
-    if (!trimmedKey.startsWith('AI')) {
+    // 先过滤明显的测试/占位键
+    if (this.isBlacklisted(trimmedKey)) {
       return {
         isValid: false,
-        reason: 'API key must start with "AI"',
+        reason: 'API key is blacklisted (test/demo/placeholder)'
       };
     }
 
-    // 基本长度检查（至少3个字符）
-    if (trimmedKey.length < 3) {
+    // Google Gemini 常见 KEY 模式：AIza 开头 + 35 字符（总长 39）
+    const GEMINI_KEY_REGEX = /^AIza[0-9A-Za-z\-_]{35}$/;
+    const isStrictGemini = GEMINI_KEY_REGEX.test(trimmedKey);
+
+    // 宽松兼容：不少 SDK 可能传递 Bearer 拼接或带逗号时的拆分残留，这里仅作最小检查
+    const isLenOk = trimmedKey.length >= 10 && trimmedKey.length <= 128;
+
+    if (!isStrictGemini && !isLenOk) {
       return {
         isValid: false,
-        reason: 'API key is too short',
+        reason: 'API key format invalid (must match Gemini key or meet minimal length)'
       };
     }
 

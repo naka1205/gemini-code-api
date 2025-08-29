@@ -478,7 +478,6 @@ X-RateLimit-ResetTime: 2022-01-01T00:00:00Z
 
 ### 1. API 密钥管理
 - 安全存储 API 密钥
-- 使用环境变量
 - 定期轮换密钥
 - 监控使用情况和配额
 
@@ -508,7 +507,7 @@ X-RateLimit-ResetTime: 2022-01-01T00:00:00Z
 import { GeminiCodeAPI } from 'gemini-code-api';
 
 const api = new GeminiCodeAPI({
-  apiKey: process.env.API_KEY,
+  apiKey: 'YOUR_API_KEY',
   baseURL: 'https://your-api.com'
 });
 
@@ -525,7 +524,7 @@ const response = await api.chat.completions.create({
 ```python
 import requests
 
-api_key = os.getenv('API_KEY')
+api_key = 'YOUR_API_KEY'
 headers = {
     'Authorization': f'Bearer {api_key}',
     'Content-Type': 'application/json'

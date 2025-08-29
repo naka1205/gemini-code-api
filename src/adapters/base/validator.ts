@@ -63,6 +63,25 @@ export class BaseValidator {
   }
 
   /**
+   * 简单内容清理与长度限制（防止注入和超长输入）
+   */
+  static sanitizeTextInput(value: unknown, fieldName: string, maxLength: number = 32000): string {
+    if (typeof value !== 'string') {
+      throwError.validation(`Field '${fieldName}' must be a string`, { field: fieldName });
+    }
+    let text = value as string;
+    if (text.length > maxLength) {
+      throwError.validation(
+        `Field '${fieldName}' exceeds max length ${maxLength}`,
+        { field: fieldName, length: text.length, maxLength }
+      );
+    }
+    // 去除不可见控制字符（保留常见换行制表）
+    text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+    return text;
+  }
+
+  /**
    * 验证必填字段
    */
   static validateRequired<T>(value: T, fieldName: string): T {

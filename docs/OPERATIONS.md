@@ -4,12 +4,79 @@
 
 ## 📊 监控和运维
 
-### 本地调式
+### 本地调试（含日志连接与代码验证）
 
-控制台设置网络代理 
+执行的步骤：
 
+1) 设置网络代理（可选，但国内/受限网络强烈建议）
+
+```powershell
+# Windows PowerShell（当前会话）
+$env:HTTP_PROXY = "http://127.0.0.1:7890"
+$env:HTTPS_PROXY = "http://127.0.0.1:7890"
+# 快速连通性检查
+curl https://workers.cloudflare.com | Select-Object -First 1
 ```
-$env:HTTP_PROXY="http://127.0.0.1:7897"; $env:HTTPS_PROXY="http://127.0.0.1:7897"
+
+```bash
+# macOS/Linux（当前会话）
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+curl -I https://workers.cloudflare.com
+```
+
+2) 启动日志尾随（tail）并落地到文件
+
+```powershell
+# 支持格式：json / pretty（推荐 json 便于检索）
+npx wrangler tail --format json | Tee-Object -FilePath logs/workers.tail.json
+```
+
+```bash
+# macOS/Linux
+npx wrangler tail --format json | tee logs/workers.tail.json
+```
+
+常见筛选命令（PowerShell）：
+
+```powershell
+# 最新 100 行
+Get-Content logs/workers.tail.json -Tail 100
+# 仅看错误/警告
+Get-Content logs/workers.tail.json | Select-String -Pattern '"level":"error"|"level":"warn"'
+# 按请求ID筛选（替换为真实ID）
+Get-Content logs/workers.tail.json | Select-String 0123456789abcdef
+```
+
+3) 端到端验证（按端点执行并在 tail 与 D1 中核对数据）
+
+- 运行测试脚本（示例，需设置 API_BASE 与 API_KEY）：
+
+```bash
+node scripts/test-claude-debug.cjs
+node scripts/test-claude-stream.cjs
+node scripts/test-openai-nonstream.cjs
+node scripts/test-openai-stream.cjs
+node scripts/test-openai-embeddings.cjs
+```
+
+- 数据库字段校验（D1 查询示例）：
+
+```bash
+# 按端点检查最近记录，关注 original_model/client_ip/user_agent/request_size/response_size/total_tokens/is_stream/status_code/has_error
+wrangler d1 execute gemini-code --command="SELECT * FROM request_logs WHERE endpoint = '/v1/messages' ORDER BY timestamp DESC LIMIT 5"
+wrangler d1 execute gemini-code --command="SELECT * FROM request_logs WHERE endpoint = '/v1/chat/completions' ORDER BY timestamp DESC LIMIT 5"
+wrangler d1 execute gemini-code --command="SELECT * FROM request_logs WHERE endpoint = '/v1/embeddings' ORDER BY timestamp DESC LIMIT 5"
+```
+
+4) 排错建议（与工作流一致）
+
+- 流式记录缺失：检查 `ReadableStream.tee()` 两支统计与 `waitUntil` 调用时机；确保 reader 循环能进入 `finally`。
+- 字段为 `null/0`：检查路由是否正确传入 `context`；确认 `QuotaManager.recordUsage` 绑定项与 schema 一致。
+- 清理历史占位记录（可选）：
+
+```bash
+wrangler d1 execute gemini-code --command="DELETE FROM request_logs WHERE is_stream=1 AND request_size=0 AND response_size=0 AND total_tokens=0"
 ```
 
 ### 性能监控
@@ -86,6 +153,34 @@ wrangler d1 execute gemini-code --command="SELECT 'request_logs' as table_name, 
 ```
 
 ## ⚠️ 重要注意事项
+
+### 日志与网络代理（先设代理再连接日志）
+
+在国内或受限网络环境中，连接 Cloudflare 日志服务前应先设置系统或会话级网络代理，否则可能出现连接失败或超时。
+
+- Windows PowerShell（当前会话）
+```powershell
+$env:HTTP_PROXY = "http://127.0.0.1:7890"
+$env:HTTPS_PROXY = "http://127.0.0.1:7890"
+# 验证网络
+curl https://workers.cloudflare.com | Select-Object -First 1
+
+# 连接日志（json 或 pretty 二选一，建议 json 便于检索）
+npx wrangler tail --format json | Tee-Object -FilePath logs/workers.tail.json
+```
+
+- macOS/Linux（当前会话）
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+# 验证网络
+curl -I https://workers.cloudflare.com
+
+# 连接日志（json 或 pretty 二选一）
+npx wrangler tail --format json | tee logs/workers.tail.json
+```
+
+说明：wrangler 支持的格式仅 `json` 与 `pretty`，不支持 `ndjson`。
 
 ### 安全注意事项
 
