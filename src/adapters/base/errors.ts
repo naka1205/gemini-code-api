@@ -1,314 +1,310 @@
 /**
- * 基础错误处理
- * 适配器层面的错误处理和转换
+ * 统一错误处理工具
+ * 提供标准化的错误类型和格式
  */
-import { AppError, ErrorType, throwError } from '../../middleware/error-handler.js';
-import type { ClientType } from '../../types/index.js';
 
-/**
- * Gemini API错误响应格式
- */
-export interface GeminiErrorResponse {
+import { HTTPException } from 'hono/http-exception';
+
+export interface ApiError {
   error: {
-    code: number;
     message: string;
-    status: string;
-    details?: any[];
+    type: string;
+    code: string;
+    details?: any;
   };
 }
 
 /**
- * 适配器错误处理器
+ * 错误类型枚举
  */
-export class AdapterErrorHandler {
-  /**
-   * 处理Gemini API错误响应
-   */
-  static handleGeminiError(errorResponse: GeminiErrorResponse, apiKey: string): never {
-    const { error } = errorResponse;
-    const maskedKey = this.maskApiKey(apiKey);
-
-    switch (error.code) {
-      case 400:
-        throwError.validation(
-          `Gemini API validation error: ${error.message}`,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable'); // TypeScript流程控制
-        
-      case 401:
-        throwError.authentication(
-          `Invalid Gemini API key: ${maskedKey}. Please check your API key.`,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-        
-      case 403:
-        throwError.authentication(
-          `Gemini API access denied for key: ${maskedKey}. Please check your permissions.`,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-        
-      case 404:
-        throwError.validation(
-          `Gemini API resource not found: ${error.message}`,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-        
-      case 429:
-        throwError.rateLimit(
-          `Gemini API rate limit exceeded for key: ${maskedKey}. Please try again later.`,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-        
-      case 500:
-      case 502:
-      case 503:
-      case 504:
-        throwError.api(
-          `Gemini API server error: ${error.message}`,
-          error.code,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-        
-      default:
-        throwError.api(
-          `Gemini API error: ${error.message}`,
-          error.code || 500,
-          { geminiError: error, apiKey: maskedKey }
-        );
-        throw new Error('Unreachable');
-    }
-  }
-
-  /**
-   * 处理网络错误
-   */
-  static handleNetworkError(error: Error, apiKey: string): never {
-    const maskedKey = this.maskApiKey(apiKey);
-
-    if (error.name === 'AbortError') {
-      throwError.network(
-        'Request timeout while calling Gemini API',
-        { originalError: error.message, apiKey: maskedKey }
-      );
-      throw new Error('Unreachable');
-    }
-
-    if (error.message.includes('fetch')) {
-      throwError.network(
-        'Network error while calling Gemini API',
-        { originalError: error.message, apiKey: maskedKey }
-      );
-      throw new Error('Unreachable');
-    }
-
-    throwError.api(
-      `Unexpected error calling Gemini API: ${error.message}`,
-      500,
-      { originalError: error.message, apiKey: maskedKey }
-    );
-    throw new Error('Unreachable');
-  }
-
-  /**
-   * 处理JSON解析错误
-   */
-  static handleJsonParseError(error: Error, context: string): never {
-    throwError.validation(
-      `Invalid JSON in ${context}: ${error.message}`,
-      { parseError: error.message, context }
-    );
-    throw new Error('Unreachable');
-  }
-
-  /**
-   * 处理模型映射错误
-   */
-  static handleModelMappingError(originalModel: string, clientType: ClientType): never {
-    throwError.validation(
-      `Unsupported model '${originalModel}' for ${clientType} client`,
-      { originalModel, clientType, supportedModels: this.getSupportedModels(clientType) }
-    );
-    throw new Error('Unreachable');
-  }
-
-  /**
-   * 处理转换错误
-   */
-  static handleTransformError(error: Error, transformType: string): never {
-    throwError.internal(
-      `Request/response transformation failed (${transformType}): ${error.message}`,
-      { transformType, originalError: error.message }
-    );
-    throw new Error('Unreachable');
-  }
-
-  /**
-   * 创建适配器特定错误
-   */
-  static createAdapterError(
-    message: string,
-    clientType: ClientType,
-    errorType: ErrorType = ErrorType.INTERNAL_ERROR,
-    statusCode: number = 500
-  ): AppError {
-    return new AppError(
-      `${clientType.toUpperCase()} adapter error: ${message}`,
-      errorType,
-      statusCode,
-      true,
-      { clientType, adapterError: true }
-    );
-  }
-
-  /**
-   * 验证响应完整性
-   */
-  static validateResponse(response: any, expectedFields: string[]): void {
-    if (!response || typeof response !== 'object') {
-      throwError.api('Invalid response format from Gemini API');
-    }
-
-    const missingFields = expectedFields.filter(field => !(field in response));
-    if (missingFields.length > 0) {
-      throwError.api(
-        `Incomplete response from Gemini API, missing fields: ${missingFields.join(', ')}`,
-        502,
-        { missingFields, response }
-      );
-    }
-  }
-
-  /**
-   * 处理流式响应错误
-   */
-  static handleStreamingError(error: Error, apiKey: string): never {
-    const maskedKey = this.maskApiKey(apiKey);
-
-    if (error.message.includes('stream')) {
-      throwError.api(
-        'Streaming response error from Gemini API',
-        502,
-        { originalError: error.message, apiKey: maskedKey }
-      );
-      throw new Error('Unreachable');
-    }
-
-    this.handleNetworkError(error, apiKey);
-  }
-
-  // === 私有辅助方法 ===
-
-  /**
-   * 掩码API密钥
-   */
-  private static maskApiKey(apiKey: string): string {
-    if (apiKey.length <= 8) {
-      return '*'.repeat(apiKey.length);
-    }
-
-    const start = apiKey.substring(0, 4);
-    const end = apiKey.substring(apiKey.length - 4);
-    const middle = '*'.repeat(apiKey.length - 8);
-    
-    return `${start}${middle}${end}`;
-  }
-
-  /**
-   * 获取支持的模型列表
-   */
-  private static getSupportedModels(clientType: ClientType): string[] {
-    switch (clientType) {
-      case 'openai':
-        return ['gpt-4', 'gpt-4o', 'gpt-3.5-turbo', 'gpt-4-turbo'];
-      case 'claude':
-        return ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-sonnet-20240229'];
-      case 'gemini':
-        return ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-pro'];
-      default:
-        return [];
-    }
-  }
+export enum ErrorType {
+  VALIDATION = 'validation_error',
+  AUTHENTICATION = 'authentication_error',
+  AUTHORIZATION = 'authorization_error',
+  RATE_LIMIT = 'rate_limit_error',
+  QUOTA_EXCEEDED = 'quota_exceeded_error',
+  API_ERROR = 'api_error',
+  NETWORK_ERROR = 'network_error',
+  INTERNAL_ERROR = 'internal_error',
+  NOT_FOUND = 'not_found_error',
+  TIMEOUT = 'timeout_error',
+  SERVICE_UNAVAILABLE = 'service_unavailable_error',
 }
 
 /**
- * 错误恢复策略
+ * 错误代码枚举
  */
-export class ErrorRecoveryStrategy {
-  /**
-   * 判断错误是否可重试
-   */
-  static isRetryableError(error: Error | AppError): boolean {
-    if (error instanceof AppError) {
-      // 网络错误、超时错误、5xx错误可重试
-      return (
-        error.type === ErrorType.NETWORK_ERROR ||
-        (error.type === ErrorType.API_ERROR && error.statusCode >= 500)
-      );
-    }
+export enum ErrorCode {
+  INVALID_INPUT = 'INVALID_INPUT',
+  MISSING_FIELD = 'MISSING_FIELD',
+  INVALID_FORMAT = 'INVALID_FORMAT',
+  INVALID_MODEL = 'INVALID_MODEL',
+  INVALID_API_KEY = 'INVALID_API_KEY',
+  API_KEY_EXPIRED = 'API_KEY_EXPIRED',
+  QUOTA_EXCEEDED = 'QUOTA_EXCEEDED',
+  RATE_LIMITED = 'RATE_LIMITED',
+  MODEL_NOT_FOUND = 'MODEL_NOT_FOUND',
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  TIMEOUT = 'TIMEOUT',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+  API_ERROR = 'API_ERROR',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+}
 
-    // 网络相关错误可重试
-    return (
-      error.name === 'AbortError' ||
-      error.message.includes('fetch') ||
-      error.message.includes('network') ||
-      error.message.includes('timeout')
+/**
+ * 统一错误抛出工具
+ */
+export const throwError = {
+  /**
+   * 验证错误
+   */
+  validation: (message: string, details?: any, code: string = ErrorCode.INVALID_INPUT) => {
+    throw new HTTPException(400, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.VALIDATION,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 认证错误
+   */
+  authentication: (message: string, details?: any, code: string = ErrorCode.INVALID_API_KEY) => {
+    throw new HTTPException(401, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.AUTHENTICATION,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 授权错误
+   */
+  authorization: (message: string, details?: any, code: string = ErrorCode.INVALID_API_KEY) => {
+    throw new HTTPException(403, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.AUTHORIZATION,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 速率限制错误
+   */
+  rateLimit: (message: string, details?: any, code: string = ErrorCode.RATE_LIMITED) => {
+    throw new HTTPException(429, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.RATE_LIMIT,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 配额超限错误
+   */
+  quotaExceeded: (message: string, details?: any, code: string = ErrorCode.QUOTA_EXCEEDED) => {
+    throw new HTTPException(429, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.QUOTA_EXCEEDED,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * API错误
+   */
+  api: (message: string, statusCode: number = 502, details?: any, code: string = ErrorCode.API_ERROR) => {
+    throw new HTTPException(statusCode as any, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.API_ERROR,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 网络错误
+   */
+  network: (message: string, details?: any, code: string = ErrorCode.NETWORK_ERROR) => {
+    throw new HTTPException(502, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.NETWORK_ERROR,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 内部错误
+   */
+  internal: (message: string, details?: any, code: string = ErrorCode.INTERNAL_ERROR) => {
+    throw new HTTPException(500, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.INTERNAL_ERROR,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 未找到错误
+   */
+  notFound: (message: string, details?: any, code: string = ErrorCode.MODEL_NOT_FOUND) => {
+    throw new HTTPException(404, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.NOT_FOUND,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 超时错误
+   */
+  timeout: (message: string, details?: any, code: string = ErrorCode.TIMEOUT) => {
+    throw new HTTPException(408, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.TIMEOUT,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+
+  /**
+   * 服务不可用错误
+   */
+  serviceUnavailable: (message: string, details?: any, code: string = ErrorCode.SERVICE_UNAVAILABLE) => {
+    throw new HTTPException(503, {
+      message: JSON.stringify({
+        error: {
+          message,
+          type: ErrorType.SERVICE_UNAVAILABLE,
+          code,
+          details,
+        },
+      }),
+    });
+  },
+};
+
+/**
+ * 创建标准化的API错误响应
+ */
+export function createApiError(
+  type: ErrorType,
+  message: string,
+  code: string,
+  details?: any
+): ApiError {
+  return {
+    error: {
+      message,
+      type,
+      code,
+      details,
+    },
+  };
+}
+
+/**
+ * 检查错误类型并转换为标准格式
+ */
+export function normalizeError(error: any): ApiError {
+  if (error instanceof HTTPException) {
+    try {
+      const parsed = JSON.parse(error.message);
+      if (parsed.error) {
+        return parsed;
+      }
+    } catch {
+      // 如果解析失败，创建标准错误
+    }
+    
+    return createApiError(
+      ErrorType.INTERNAL_ERROR,
+      error.message || 'Internal server error',
+      ErrorCode.INTERNAL_ERROR,
+      { statusCode: error.status }
     );
   }
 
-  /**
-   * 判断是否应该切换API密钥
-   */
-  static shouldSwitchApiKey(error: Error | AppError): boolean {
-    if (error instanceof AppError) {
-      // 401、403、429错误应该切换密钥
-      return (
-        error.type === ErrorType.AUTHENTICATION_ERROR ||
-        error.type === ErrorType.RATE_LIMIT_ERROR ||
-        (error.type === ErrorType.API_ERROR && [401, 403, 429].includes(error.statusCode))
-      );
-    }
-
-    return false;
+  if (error instanceof Error) {
+    return createApiError(
+      ErrorType.INTERNAL_ERROR,
+      error.message || 'Unknown error occurred',
+      ErrorCode.INTERNAL_ERROR,
+      { stack: error.stack }
+    );
   }
 
-  /**
-   * 获取重试延迟时间
-   */
-  static getRetryDelay(attempt: number, error: Error | AppError): number {
-    let baseDelay = 1000; // 1秒基础延迟
+  return createApiError(
+    ErrorType.INTERNAL_ERROR,
+    String(error) || 'Unknown error occurred',
+    ErrorCode.INTERNAL_ERROR,
+    { originalError: error }
+  );
+}
 
-    if (error instanceof AppError && error.type === ErrorType.RATE_LIMIT_ERROR) {
-      baseDelay = 5000; // 限流错误使用更长延迟
-    }
-
-    // 指数退避，但有最大限制
-    return Math.min(baseDelay * Math.pow(2, attempt), 30000);
+/**
+ * 安全地抛出错误，确保错误格式一致
+ */
+export function safeThrow(
+  errorType: keyof typeof throwError,
+  message: string,
+  details?: any,
+  code?: string
+): never {
+  const errorMethod = throwError[errorType];
+  if (typeof errorMethod === 'function') {
+    errorMethod(message, details, code);
+  } else {
+    throwError.internal(`Invalid error type: ${errorType}`, { message, details, code });
   }
-
-  /**
-   * 创建错误上下文信息
-   */
-  static createErrorContext(
-    error: Error | AppError,
-    clientType: ClientType,
-    apiKey: string,
-    attempt: number = 1
-  ): Record<string, any> {
-    return {
-      clientType,
-      apiKey: AdapterErrorHandler['maskApiKey'](apiKey),
-      attempt,
-      errorType: error instanceof AppError ? error.type : 'unknown',
-      errorName: error.name,
-      timestamp: Date.now(),
-      isRetryable: this.isRetryableError(error),
-      shouldSwitchKey: this.shouldSwitchApiKey(error),
-    };
-  }
+  // 确保函数永远不会到达这里
+  throw new Error('Unreachable code');
 }

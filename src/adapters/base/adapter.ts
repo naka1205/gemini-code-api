@@ -4,13 +4,13 @@
  */
 import type { Context } from 'hono';
 import type { ClientType } from '../../types/index.js';
-// 注意：旧的load-balancer已被新的SmartLoadBalancer替代
-// import { getGlobalSelector } from '../../services/load-balancer/selector.js';
-// import { getGlobalMetricsCollector } from '../../services/load-balancer/metrics.js';
+import { SmartLoadBalancer } from '../../services/balancer/selector.js';
 import { httpClient } from '../../services/http/client.js';
 import { throwError } from '../../middleware/error-handler.js';
 import { logApiMetrics } from '../../middleware/logger.js';
+import { log } from '../../utils/logger.js';
 import { API_CONFIG } from '../../utils/constants.js';
+import { hashApiKey } from '../../utils/helpers.js';
 
 /**
  * 适配器请求上下文
@@ -56,12 +56,17 @@ export interface StreamingAdapterResult {
  */
 export abstract class BaseAdapter {
   protected clientType: ClientType;
-  // 注意：旧的load-balancer已被新的SmartLoadBalancer替代
-  // protected selector = getGlobalSelector();
-  // protected metricsCollector = getGlobalMetricsCollector();
+  protected loadBalancer: SmartLoadBalancer | null = null;
 
   constructor(clientType: ClientType) {
     this.clientType = clientType;
+  }
+
+  /**
+   * 设置负载均衡器实例
+   */
+  setLoadBalancer(loadBalancer: SmartLoadBalancer): void {
+    this.loadBalancer = loadBalancer;
   }
 
   /**
@@ -174,24 +179,51 @@ export abstract class BaseAdapter {
       throwError.authentication('No API keys provided');
     }
 
-    // 注意：旧的load-balancer已被新的SmartLoadBalancer替代
-    // const selection = this.selector.selectApiKey(context.apiKeys);
+    // 使用真正的智能负载均衡器
+    if (this.loadBalancer) {
+      try {
+        // 从请求中提取模型信息
+        const model = this.extractModelFromRequest(context);
+        const estimatedTokens = this.estimateTokens(context);
+        
+        const selection = await this.loadBalancer.selectOptimalKey(
+          context.apiKeys,
+          model,
+          estimatedTokens
+        );
+        
+        // 更新上下文
+        context.context.set('selectedKey', selection.selectedKey);
+        context.context.set('selectedKeyHash', selection.selectedKeyHash);
+        context.context.set('availableKeys', selection.availableKeys);
+        context.context.set('healthyKeys', selection.healthyKeys);
+        context.context.set('selectionReason', selection.reason);
+
+        return selection;
+             } catch (error) {
+         log.warn('Load balancer failed, falling back to first key', {
+           error: error instanceof Error ? error.message : String(error),
+         });
+       }
+    }
     
-    // 临时使用第一个API密钥
-    const selection = {
+    // 降级到第一个API密钥
+    const fallbackSelection = {
       selectedKey: context.apiKeys[0],
-      selectedKeyHash: 'temp-hash',
+      selectedKeyHash: hashApiKey(context.apiKeys[0]),
       availableKeys: context.apiKeys.length,
       healthyKeys: context.apiKeys.length,
+      reason: 'fallback_no_balancer',
     };
     
     // 更新上下文
-    context.context.set('selectedKey', selection.selectedKey);
-    context.context.set('selectedKeyHash', selection.selectedKeyHash);
-    context.context.set('availableKeys', selection.availableKeys);
-    context.context.set('healthyKeys', selection.healthyKeys);
+    context.context.set('selectedKey', fallbackSelection.selectedKey);
+    context.context.set('selectedKeyHash', fallbackSelection.selectedKeyHash);
+    context.context.set('availableKeys', fallbackSelection.availableKeys);
+    context.context.set('healthyKeys', fallbackSelection.healthyKeys);
+    context.context.set('selectionReason', fallbackSelection.reason);
 
-    return selection;
+    return fallbackSelection;
   }
 
   /**
@@ -231,11 +263,27 @@ export abstract class BaseAdapter {
   }
 
   /**
+   * 从请求中提取模型信息
+   */
+  protected extractModelFromRequest(_context: AdapterContext): string {
+    // 默认实现，子类可以重写
+    return 'gemini-2.5-pro';
+  }
+
+  /**
+   * 估算token数量
+   */
+  protected estimateTokens(_context: AdapterContext): number {
+    // 默认实现，子类可以重写
+    return 0;
+  }
+
+  /**
    * 构建Gemini API URL
    */
   protected buildGeminiApiUrl(_request: any, _context: AdapterContext): string {
     // 子类可以重写此方法来构建特定的URL
-    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/gemini-pro:generateContent`;
+    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/gemini-2.5-pro:generateContent`;
   }
 
   /**
@@ -283,8 +331,12 @@ export abstract class BaseAdapter {
    */
   protected extractModelFromContext(_context: AdapterContext): string {
     // 子类可以重写此方法来提取具体的模型信息
-    return 'gemini-pro';
+    return 'gemini-2.5-pro';
   }
+
+
+
+
 
   /**
    * 获取客户端类型

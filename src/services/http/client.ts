@@ -12,6 +12,7 @@ import type {
 } from '../../types/index.js';
 import { HTTP_CONFIG } from '../../utils/constants.js';
 import { sleep } from '../../utils/helpers.js';
+import { throwError } from '../../middleware/error-handler.js';
 
 export class HttpClientImpl implements HttpClient {
   private retryConfig: RetryConfig;
@@ -79,11 +80,11 @@ export class HttpClientImpl implements HttpClient {
         });
       }
 
-      if (!response.body) {
-        throw new Error('Response body is null');
+                if (!response.body) {
+        throwError.api('Response body is null', 502);
       }
 
-      return response.body;
+      return response.body!;
     } catch (error) {
       throw this.handleRequestError(error as Error, url);
     }

@@ -4,7 +4,7 @@
  */
 import { log } from '../../utils/logger.js';
 import type { AdapterContext } from '../base/adapter.js';
-import { AdapterErrorHandler } from '../base/errors.js';
+import { throwError } from '../base/errors.js';
 import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
 /**
@@ -240,7 +240,7 @@ export class OpenAITransformer {
     const geminiModel = MODEL_MAPPINGS[openaiModel as keyof typeof MODEL_MAPPINGS];
     
     if (!geminiModel) {
-      AdapterErrorHandler.handleModelMappingError(openaiModel, 'openai');
+      throwError.validation(`Unsupported model: ${openaiModel}`);
     }
     
     return geminiModel;

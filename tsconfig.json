@@ -17,16 +17,7 @@
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-      "@/types/*": ["src/types/*"],
-      "@/adapters/*": ["src/adapters/*"],
-      "@/middleware/*": ["src/middleware/*"],
-      "@/services/*": ["src/services/*"],
-      "@/routes/*": ["src/routes/*"],
-      "@/database/*": ["src/database/*"],
-      "@/utils/*": ["src/utils/*"]
-    },
+    "paths": {},
     "types": [
       "@cloudflare/workers-types",
       "vitest/globals",

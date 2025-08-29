@@ -25,10 +25,14 @@ import { createModelsRoute } from './routes/v1/models.js';
 import { createMessagesRoute } from './routes/v1/messages.js';
 import { createGenerateContentRoute } from './routes/v1beta/generate.js';
 import { createGeminiModelsRoute } from './routes/v1beta/models.js';
+import maintenance from './routes/v1/maintenance.js';
 
 // 工具导入 - 使用相对路径
 import { flushLogs } from './middleware/logger.js';
 import { log } from './utils/logger.js';
+
+// 负载均衡器导入
+import { initializeGlobalLoadBalancer } from './services/balancer/index.js';
 
 /**
  * 应用版本信息
@@ -128,6 +132,7 @@ function createApp(): Hono {
   app.route('/v1/embeddings', createEmbeddingsRoute());
   app.route('/v1/models', createModelsRoute());
   app.route('/v1/messages', createMessagesRoute()); // Claude兼容
+  app.route('/v1/maintenance', maintenance); // 数据库维护路由
 
   // === V1Beta API路由 (Gemini原生) ===
   
@@ -156,6 +161,7 @@ function createApp(): Hono {
           '/v1/models',
           '/v1/messages',
           '/v1/count-tokens', // 新增到404提示
+          '/v1/maintenance', // 数据库维护
           '/v1beta/models',
           '/v1beta/models/{model}:generateContent',
         ],
@@ -222,6 +228,12 @@ export default {
    */
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     try {
+      // 初始化负载均衡器（如果还没有初始化）
+      if (env.KV && env.DB) {
+        initializeGlobalLoadBalancer(env.KV, env.DB);
+        log.debug('Global load balancer initialized');
+      }
+      
       return await app.fetch(request, env, ctx);
     } catch (error) {
       log.error('❌ Unhandled error in fetch handler:', error as Error);

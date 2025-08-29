@@ -3,12 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# 调试模式配置
-
 [[d1_databases]]
 binding = "DB"
 database_name = "gemini-code"
-database_id = "71b39975-72e6-4d64-89d2-0363f3e7d161"
+database_id = "41573a29-12ff-44ad-a507-34d43b5f5b77"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "a6fd337e794548529e3d2cde1782a671"
 
 [build]
 command = "npm run build"

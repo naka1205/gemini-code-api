@@ -51,7 +51,7 @@ export const GEMINI_MODELS: GeminiModel[] = [
     name: 'gemini-2.0-flash',
     displayName: 'Gemini 2.0 Flash',
     description: 'Previous generation capable model',
-    version: '1.0',
+    version: '2.0',
     inputTokenLimit: 32768,
     outputTokenLimit: 2048,
     supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],

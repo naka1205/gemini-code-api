@@ -4,7 +4,7 @@
  */
 import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
 import { RequestBodyValidator } from '../base/validator.js';
-import { AdapterErrorHandler } from '../base/errors.js';
+import { throwError } from '../base/errors.js';
 import { API_CONFIG } from '../../utils/constants.js';
 
 /**
@@ -69,7 +69,7 @@ export class OpenAIEmbeddingAdapter extends BaseAdapter {
     // 验证模型是否支持嵌入
     const mappedModel = this.mapEmbeddingModel(body.model);
     if (!mappedModel) {
-      AdapterErrorHandler.handleModelMappingError(body.model, 'openai');
+      throwError.validation(`Unsupported embedding model: ${body.model}`);
     }
 
     // 验证编码格式
@@ -111,8 +111,11 @@ export class OpenAIEmbeddingAdapter extends BaseAdapter {
         }))
       };
     } catch (error) {
-      AdapterErrorHandler.handleTransformError(error as Error, 'openai-embedding-to-gemini');
+      throwError.api('Failed to transform embedding request', 400, { originalError: error });
     }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
 
   /**
@@ -124,7 +127,7 @@ export class OpenAIEmbeddingAdapter extends BaseAdapter {
     try {
       // 验证响应结构
       if (!response.embeddings || !Array.isArray(response.embeddings)) {
-        AdapterErrorHandler.validateResponse(response, ['embeddings']);
+        throwError.api('Invalid embedding response structure');
       }
 
       // 转换为OpenAI格式
@@ -150,8 +153,11 @@ export class OpenAIEmbeddingAdapter extends BaseAdapter {
         },
       };
     } catch (error) {
-      AdapterErrorHandler.handleTransformError(error as Error, 'gemini-embedding-to-openai');
+      throwError.api('Failed to transform embedding response', 502, { originalError: error });
     }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
 
   /**

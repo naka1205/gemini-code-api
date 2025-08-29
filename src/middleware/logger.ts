@@ -132,7 +132,7 @@ class LogBatcher {
   private async getDatabaseOperations(): Promise<import('../database/operations.js').DatabaseOperations | null> {
     try {
       // 动态导入以避免循环依赖
-      const { DatabaseOperations } = await import('../database/operations.js');
+      await import('../database/operations.js');
       // 暂时返回null，避免循环依赖
       log.warn('Database operations temporarily disabled to avoid circular dependency');
       return null;
@@ -316,6 +316,33 @@ export function logger() {
       // 添加响应头
       c.header('x-request-id', requestId);
       c.header('x-response-time', `${responseTime}ms`);
+
+      // 记录到数据库（如果可用）
+      try {
+        const { DatabaseOperations: DB } = await import('../database/operations.js');
+        const dbOps = new DB(c.env.DB);
+        
+        // 从上下文获取信息
+        const apiKeyHash = c.get('selectedKeyHash') || '';
+        const model = c.get('model') || '';
+        const userAgent = request.header('user-agent') || '';
+        const clientIp = getClientIp(request.raw as any);
+        
+        await dbOps.logRequest({
+          apiKeyHash: apiKeyHash,
+          model: model,
+          statusCode: c.res.status,
+          responseTime: responseTime,
+          userAgent: userAgent,
+          clientIP: clientIp,
+          timestamp: new Date().getTime(),
+          clientType: c.get('clientType') || 'unknown',
+          endpoint: new URL(request.url).pathname,
+        });
+      } catch (error) {
+        // 数据库记录失败不影响主流程
+        log.warn('Failed to log request to database', { error: error instanceof Error ? error.message : String(error) });
+      }
 
     } catch (error) {
       // 记录错误响应

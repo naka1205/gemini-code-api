@@ -1,15 +1,15 @@
 /**
  * Gemini原生适配器
- * 最简单的适配器，直接透传Gemini API请求
+ * 直接使用Gemini API格式，无需转换
  */
-import { log } from '../../utils/logger.js';
 import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
 import { RequestBodyValidator } from '../base/validator.js';
-import { AdapterErrorHandler } from '../base/errors.js';
-import { API_CONFIG } from '../../utils/constants.js';
+import { log } from '../../utils/logger.js';
+import { throwError } from '../base/errors.js';
 
 /**
- * Gemini原生适配器类
+ * Gemini原生适配器
+ * 直接使用Gemini API格式，无需转换
  */
 export class GeminiNativeAdapter extends BaseAdapter {
   constructor() {
@@ -17,68 +17,93 @@ export class GeminiNativeAdapter extends BaseAdapter {
   }
 
   /**
-   * 验证Gemini原生请求
+   * 验证请求体
    */
   protected async validateRequest(context: AdapterContext): Promise<void> {
     const body = await RequestBodyValidator.validateCommonRequestBody(context.request);
-
-    // Gemini API特定验证
-    if (body.contents) {
-      RequestBodyValidator.validateRequired(body.contents, 'contents');
-      RequestBodyValidator.validateArrayLength(body.contents, 'contents', 1);
-      
-      // 验证每个content项
-      body.contents.forEach((content: any, index: number) => {
-        const fieldPath = `contents[${index}]`;
-        
-        if (content.parts) {
-          RequestBodyValidator.validateRequired(content.parts, `${fieldPath}.parts`);
-          RequestBodyValidator.validateArrayLength(content.parts, `${fieldPath}.parts`, 1);
-        }
-      });
-    }
-
-    // 验证生成配置（如果存在）
+    
+    // Gemini特定验证
+    RequestBodyValidator.validateRequired(body.contents, 'contents');
+    RequestBodyValidator.validateArrayLength(body.contents, 'contents', 1, 100);
+    
+    // 验证生成配置
     if (body.generationConfig) {
-      this.validateGenerationConfig(body.generationConfig);
+      const config = body.generationConfig;
+      if (config.temperature !== undefined) {
+        RequestBodyValidator.validateNumberRange(config.temperature, 'generationConfig.temperature', 0, 2);
+      }
+      if (config.topP !== undefined) {
+        RequestBodyValidator.validateNumberRange(config.topP, 'generationConfig.topP', 0, 1);
+      }
+      if (config.topK !== undefined) {
+        RequestBodyValidator.validateNumberRange(config.topK, 'generationConfig.topK', 1, 40);
+      }
+      if (config.maxOutputTokens !== undefined) {
+        RequestBodyValidator.validateNumberRange(config.maxOutputTokens, 'generationConfig.maxOutputTokens', 1, 8192);
+      }
     }
-
-    // 将验证后的body存储到上下文
-    context.context.set('requestBody', body);
   }
 
   /**
-   * 转换请求格式（Gemini原生无需转换）
+   * 转换请求格式
    */
   protected async transformRequest(context: AdapterContext): Promise<any> {
-    const body = context.context.get('requestBody');
-    
-    // 原生Gemini请求无需转换，直接返回
-    return body;
+    try {
+      const body = await RequestBodyValidator.validateCommonRequestBody(context.request);
+      return body; // Gemini原生无需转换
+    } catch (error) {
+      log.error('Error transforming Gemini request', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Gemini request', 400, { originalError: error });
+    }
   }
 
   /**
-   * 转换响应格式（Gemini原生无需转换）
+   * 转换响应格式
    */
   protected async transformResponse(response: any, context: AdapterContext): Promise<AdapterResult> {
-    // 验证响应结构
-    AdapterErrorHandler.validateResponse(response, ['candidates']);
+    try {
+      if (!response || typeof response !== 'object') {
+        throwError.api('Invalid response format from Gemini API');
+      }
 
-    // 提取token使用信息（如果有）
-    const tokenUsage = this.extractTokenUsage(response);
+      if (!response.candidates || !Array.isArray(response.candidates)) {
+        throwError.api('Invalid response candidates from Gemini API');
+      }
 
-    // 存储到上下文用于日志记录
-    if (tokenUsage) {
-      context.context.set('tokenUsage', tokenUsage);
+      const transformedResponse: AdapterResult = {
+        data: {
+          id: response.id || `gemini-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: context.clientType,
+          choices: response.candidates.map((candidate: any, index: number) => ({
+            index,
+            message: {
+              role: 'assistant',
+              content: candidate.content?.parts?.[0]?.text || '',
+            },
+            finish_reason: candidate.finishReason || 'stop',
+          })),
+          usage: response.usageMetadata ? {
+            prompt_tokens: response.usageMetadata.promptTokenCount || 0,
+            completion_tokens: response.usageMetadata.candidatesTokenCount || 0,
+            total_tokens: (response.usageMetadata.promptTokenCount || 0) + (response.usageMetadata.candidatesTokenCount || 0),
+          } : undefined,
+        },
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
+
+      return transformedResponse;
+    } catch (error) {
+      log.error('Error transforming Gemini response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Gemini response', 502, { originalError: error });
     }
-
-    return {
-      data: response,
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
 
   /**
@@ -88,186 +113,121 @@ export class GeminiNativeAdapter extends BaseAdapter {
     transformedRequest: any,
     context: AdapterContext
   ): Promise<StreamingAdapterResult> {
-    if (!context.selectedKey) {
-      throw new Error('No API key selected');
-    }
-
-    // 构建流式请求URL
-    const url = this.buildStreamingUrl(transformedRequest, context);
-    const headers = this.buildGeminiHeaders(context.selectedKey, context);
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          ...transformedRequest,
-          // 确保启用流式响应
-          generationConfig: {
-            ...transformedRequest.generationConfig,
-            // Gemini原生流式参数
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any;
-        AdapterErrorHandler.handleGeminiError(errorData, context.selectedKey);
+      if (!context.selectedKey) {
+        throwError.api('No API key selected');
       }
 
-      if (!response.body) {
-        throw new Error('No response body for streaming');
+      // 调用Gemini API获取流式响应
+      const response = await this.callGeminiApi(transformedRequest, context);
+      
+      if (!response || !response.body) {
+        throwError.api('No response body for streaming');
       }
 
-      // 创建转换流，处理Gemini的流式响应格式
-      const transformStream = this.createGeminiStreamTransform();
+      // 转换流式响应为Gemini格式
+      return this.transformStreamingResponse(response, context);
+    } catch (error) {
+      log.error('Error creating Gemini streaming response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to create Gemini streaming response', 502, { originalError: error });
+    }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
+  }
+
+  /**
+   * 转换流式响应
+   */
+  protected async transformStreamingResponse(
+    response: any,
+    context: AdapterContext
+  ): Promise<StreamingAdapterResult> {
+    try {
+      if (!response || !response.body) {
+        throwError.api('No response body for streaming');
+      }
+
+      // 创建流式转换器
+      const id = `gemini-${Date.now()}`;
+      let buffer = "";
+      const MAX_BUFFER_SIZE = 1024 * 1024; // 1MB限制
+
+      const transformStream = response.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new TransformStream({
+          transform(chunk: string, controller) {
+            buffer += chunk;
+            
+                         // 检查buffer大小，防止内存泄漏
+             if (buffer.length > MAX_BUFFER_SIZE) {
+               log.error("Buffer size exceeded limit, clearing buffer to prevent memory leak", {
+                 bufferLength: buffer.length,
+                 maxSize: MAX_BUFFER_SIZE
+               } as any);
+              buffer = buffer.substring(buffer.length - MAX_BUFFER_SIZE / 2);
+            }
+            
+            // 处理SSE格式
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.substring(6);
+                if (data === '[DONE]') {
+                  controller.enqueue('data: [DONE]\n\n');
+                } else {
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.candidates && parsed.candidates.length > 0) {
+                      const candidate = parsed.candidates[0];
+                      const transformed = {
+                        id,
+                        object: 'chat.completion.chunk',
+                        created: Math.floor(Date.now() / 1000),
+                        model: context.clientType,
+                        choices: [{
+                          index: 0,
+                          delta: {
+                            content: candidate.content?.parts?.[0]?.text || '',
+                          },
+                          finish_reason: candidate.finishReason || null,
+                        }],
+                      };
+                      controller.enqueue(`data: ${JSON.stringify(transformed)}\n\n`);
+                    }
+                  } catch (err) {
+                    log.warn('Error parsing streaming data', { data, error: err });
+                  }
+                }
+              }
+            }
+          },
+                     flush() {
+             if (buffer) {
+               log.warn('Unprocessed buffer data', { bufferLength: buffer.length });
+             }
+             buffer = "";
+           }
+        }))
+        .pipeThrough(new TextEncoderStream());
 
       return {
-        stream: response.body.pipeThrough(transformStream),
+        stream: transformStream,
         statusCode: 200,
         headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         },
       };
     } catch (error) {
-      AdapterErrorHandler.handleStreamingError(error as Error, context.selectedKey);
+      log.error('Error transforming Gemini streaming response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Gemini streaming response', 502, { originalError: error });
     }
-  }
-
-  /**
-   * 构建Gemini API URL
-   */
-  protected buildGeminiApiUrl(request: any, _context: AdapterContext): string {
-    // 从请求中提取模型信息
-    const model = this.extractModelFromRequest(request);
-    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/${model}:generateContent`;
-  }
-
-  /**
-   * 构建流式请求URL
-   */
-  private buildStreamingUrl(request: any, _context: AdapterContext): string {
-    const model = this.extractModelFromRequest(request);
-    return `${API_CONFIG.GEMINI_BASE_URL}/${API_CONFIG.GEMINI_API_VERSION}/models/${model}:streamGenerateContent`;
-  }
-
-  /**
-   * 从请求中提取模型名称
-   */
-  protected extractModelFromContext(context: AdapterContext): string {
-    const body = context.context.get('requestBody');
-    return this.extractModelFromRequest(body) || 'gemini-2.5-pro';
-  }
-
-  /**
-   * 从请求对象中提取模型
-   */
-  private extractModelFromRequest(request: any): string {
-    // Gemini原生请求中模型通常在URL中指定，而不是在请求体中
-    // 默认使用gemini-2.5-pro，实际实现中可以从URL路径参数中提取
-    return request?.model || 'gemini-2.5-pro';
-  }
-
-  /**
-   * 验证生成配置
-   */
-  private validateGenerationConfig(config: any): void {
-    if (config.temperature !== undefined) {
-      RequestBodyValidator.validateNumberRange(config.temperature, 'generationConfig.temperature', 0, 2);
-    }
-
-    if (config.topP !== undefined) {
-      RequestBodyValidator.validateNumberRange(config.topP, 'generationConfig.topP', 0, 1);
-    }
-
-    if (config.topK !== undefined) {
-      RequestBodyValidator.validateNumberRange(config.topK, 'generationConfig.topK', 1, 40);
-    }
-
-    if (config.maxOutputTokens !== undefined) {
-      RequestBodyValidator.validateNumberRange(config.maxOutputTokens, 'generationConfig.maxOutputTokens', 1, 8192);
-    }
-
-    if (config.stopSequences !== undefined) {
-      RequestBodyValidator.validateArrayLength(config.stopSequences, 'generationConfig.stopSequences', 0, 5);
-    }
-  }
-
-  /**
-   * 提取token使用信息
-   */
-  private extractTokenUsage(response: any): any {
-    if (response.usageMetadata) {
-      return {
-        promptTokens: response.usageMetadata.promptTokenCount,
-        completionTokens: response.usageMetadata.candidatesTokenCount,
-        totalTokens: response.usageMetadata.totalTokenCount,
-      };
-    }
-    return null;
-  }
-
-  /**
-   * 创建Gemini流式响应转换器
-   */
-  private createGeminiStreamTransform(): TransformStream {
-    return new TransformStream({
-      start() {
-        // 流开始时的初始化
-      },
-      
-      transform(chunk, controller) {
-        try {
-          const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\n');
-
-          for (const line of lines) {
-            if (line.trim() === '') continue;
-
-            // Gemini流式响应通常以data: 开头
-            if (line.startsWith('data: ')) {
-              const jsonStr = line.substring(6);
-              if (jsonStr.trim() === '[DONE]') {
-                controller.terminate();
-                return;
-              }
-
-              try {
-                JSON.parse(jsonStr); // 验证JSON格式
-                // 直接转发Gemini的原生格式
-                controller.enqueue(new TextEncoder().encode(`data: ${jsonStr}\n\n`));
-              } catch (parseError) {
-                // 忽略解析错误，可能是不完整的数据块
-                log.warn('Failed to parse streaming data:', { error: parseError });
-              }
-            }
-          }
-        } catch (error) {
-          log.error('Transform error:', error as Error);
-          controller.error(error);
-        }
-      },
-
-      flush() {
-        // 流结束时的清理
-      }
-    });
-  }
-
-  /**
-   * 获取支持的功能
-   */
-  supportsFeature(feature: string): boolean {
-    const supportedFeatures = [
-      'chat',
-      'completion', 
-      'streaming',
-      'function-calling',
-      'vision',
-      'multimodal'
-    ];
-    return supportedFeatures.includes(feature);
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
 }

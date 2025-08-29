@@ -7,7 +7,7 @@ import type { Context } from 'hono';
 import { detectClientType } from '../../middleware/auth/detector.js';
 import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
 import { isThinkingSupportedModel } from '../../utils/constants.js';
-import { throwError } from '../../middleware/error-handler.js';
+import { throwError } from '../../adapters/base/errors.js';
 import { getLogger } from '../../middleware/logger.js';
 
 /**
@@ -188,6 +188,7 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
     logger.info('Calling Gemini API directly', { model, url: geminiUrl });
 
     // 直接调用Gemini API
+    const start = Date.now();
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: {
@@ -209,6 +210,46 @@ async function handleGenerateContent(c: Context, model: string, logger: any): Pr
     }
 
     logger.info(`Gemini API call successful: ${response.status}`);
+
+    // 记录使用情况（异步，不阻塞响应）
+    try {
+      const usage = {
+        prompt: Number(responseData?.usageMetadata?.promptTokenCount || 0),
+        completion: Number(responseData?.usageMetadata?.candidatesTokenCount || 0),
+        total: Number(responseData?.usageMetadata?.totalTokenCount || 0),
+      };
+
+      const { getGlobalLoadBalancer } = await import('../../services/balancer/index.js');
+      const loadBalancer = getGlobalLoadBalancer();
+      if (loadBalancer) {
+        logger.info('v1beta generate: recording usage', {
+          model,
+          usage,
+          endpoint: `/v1beta/models/${model}:generateContent`,
+        });
+        c.executionCtx?.waitUntil(loadBalancer.recordUsage(
+          selectedKey,
+          model,
+          usage.prompt,
+          usage.completion,
+          {
+            originalModel: model,
+            endpoint: `/v1beta/models/${model}:generateContent`,
+            clientType: detectionResult!.clientType,
+            statusCode: response.status,
+            responseTimeMs: Date.now() - start,
+            clientIP: c.req.header('cf-connecting-ip') || '',
+            userAgent: c.req.header('user-agent') || '',
+            requestSize: new TextEncoder().encode(JSON.stringify(requestBody)).length,
+            responseSize: new TextEncoder().encode(JSON.stringify(responseData)).length,
+            isStream: false,
+          }
+        ));
+        logger.info('v1beta generate: usage recorded');
+      }
+    } catch (_) {
+      // 忽略记录失败，避免影响主流程
+    }
 
     // 设置响应头
     c.header('Content-Type', 'application/json');
@@ -303,6 +344,10 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
       throwError.authentication('Selected API key is invalid');
     }
     
+    // 预取全局负载均衡器实例，供流式回调使用
+    const { getGlobalLoadBalancer } = await import('../../services/balancer/index.js');
+    const lbRef = getGlobalLoadBalancer();
+
     // 构建Gemini API URL
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
     
@@ -331,14 +376,127 @@ async function handleStreamGenerateContent(c: Context, model: string, logger: an
 
     logger.info(`Gemini streaming API call successful: ${response.status}`);
 
+    // 取消即时占位写入，改为在流结束时一次性写入
+
     // 设置流式响应头
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
     c.header('Connection', 'keep-alive');
     c.header('x-powered-by', 'gemini-code-api');
 
-    // 直接转发流式响应
-    return new Response(response.body, {
+    // Reader 驱动：明确读取上游字节并透传
+    let promptSum = 0;
+    let completionSum = 0;
+    let forwardedBytes = 0;
+    let recorded = false;
+
+    const upstream = response.body!;
+    const reader = upstream.getReader();
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) {
+                try { forwardedBytes += value.byteLength; } catch {}
+                try {
+                  const text = new TextDecoder().decode(value);
+                  const lines = text.split('\n');
+                  for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const payload = line.slice(6).trim();
+                    if (!payload || payload === '[DONE]') continue;
+                    try {
+                      const obj = JSON.parse(payload);
+                      const um = obj?.usageMetadata;
+                      if (um) {
+                        if (typeof um.promptTokenCount === 'number') promptSum = um.promptTokenCount;
+                        if (typeof um.candidatesTokenCount === 'number') completionSum = um.candidatesTokenCount;
+                      }
+                    } catch {}
+                  }
+                } catch {}
+                controller.enqueue(value);
+              }
+            }
+            controller.close();
+          } catch (err) {
+            try { controller.error(err as any); } catch {}
+            throw err;
+          } finally {
+            if (!recorded) {
+              try {
+                const lb = lbRef;
+                if (lb) {
+                  const reqSize = new TextEncoder().encode(JSON.stringify(requestBody)).length;
+                  const respSize = forwardedBytes || 0;
+                  logger.info('v1beta stream: finalize recording usage', { model, promptSum, completionSum, forwardedBytes });
+                  c.executionCtx?.waitUntil(lb.recordUsage(
+                    selectedKey,
+                    model,
+                    promptSum,
+                    completionSum,
+                    {
+                      originalModel: model,
+                      endpoint: `/v1beta/models/${model}:streamGenerateContent`,
+                      clientType: detectionResult!.clientType,
+                      statusCode: response.status,
+                      responseTimeMs: 0,
+                      clientIP: c.req.header('cf-connecting-ip') || '',
+                      userAgent: c.req.header('user-agent') || '',
+                      requestSize: reqSize,
+                      responseSize: respSize,
+                      isStream: true,
+                    }
+                  ));
+                  recorded = true;
+                }
+              } catch (e) {
+                logger.error('v1beta stream: finalize record usage failed', e as Error);
+              }
+            }
+          }
+        })();
+      },
+      async cancel(_reason) {
+        try { await reader.cancel(); } catch {}
+        if (recorded) return;
+        try {
+          const lb = lbRef;
+          if (lb && !recorded) {
+            const reqSize = new TextEncoder().encode(JSON.stringify(requestBody)).length;
+            const respSize = forwardedBytes || 0;
+            logger.info('v1beta stream: recording usage on cancel', { model, promptSum, completionSum, forwardedBytes });
+            c.executionCtx?.waitUntil(lb.recordUsage(
+              selectedKey,
+              model,
+              promptSum,
+              completionSum,
+              {
+                originalModel: model,
+                endpoint: `/v1beta/models/${model}:streamGenerateContent`,
+                clientType: detectionResult!.clientType,
+                statusCode: response.status,
+                responseTimeMs: 0,
+                clientIP: c.req.header('cf-connecting-ip') || '',
+                userAgent: c.req.header('user-agent') || '',
+                requestSize: reqSize,
+                responseSize: respSize,
+                isStream: true,
+              }
+            ));
+            recorded = true;
+          }
+        } catch (err) {
+          logger.error('v1beta stream: record usage on cancel failed', err as Error);
+        }
+      }
+    });
+
+    return new Response(stream, {
       status: response.status,
       headers: c.res.headers,
     });

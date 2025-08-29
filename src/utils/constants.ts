@@ -29,20 +29,20 @@ export const LOAD_BALANCER_CONFIG = {
 // 模型映射配置
 export const MODEL_MAPPINGS = {
   // OpenAI -> Gemini
-  'gpt-4': 'gemini-2.5-flash',
-  'gpt-4o': 'gemini-2.5-pro',
-  'gpt-4o-mini': 'gemini-2.5-flash',
-  'gpt-4-turbo': 'gemini-2.5-flash',
-  'gpt-3.5-turbo': 'gemini-2.0-flash',
+  'gpt-4': 'gemini-2.5-flash',      // 中级模型
+  'gpt-4o': 'gemini-2.5-pro',       // 高级模型
+  'gpt-4o-mini': 'gemini-2.5-flash', // 中级模型
+  'gpt-4-turbo': 'gemini-2.5-flash', // 中级模型
+  'gpt-3.5-turbo': 'gemini-2.0-flash', // 低级模型
 
   // Claude -> Gemini
-  'claude-opus-4-20250514': 'gemini-2.5-pro',
-  'claude-sonnet-4-20250514': 'gemini-2.5-flash',
-  'claude-3-7-sonnet-20250219': 'gemini-2.5-flash',
-  'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
-  'claude-3-5-haiku-20241022': 'gemini-2.0-flash',
-  'claude-3-opus-20240229': 'gemini-2.0-flash',
-  'claude-3-sonnet-20240229': 'gemini-2.0-flash',
+  'claude-opus-4-20250514': 'gemini-2.5-pro',      // 高级模型
+  'claude-sonnet-4-20250514': 'gemini-2.5-flash',  // 中级模型
+  'claude-3-7-sonnet-20250219': 'gemini-2.5-flash', // 中级模型
+  'claude-3-5-sonnet-20241022': 'gemini-2.0-flash', // 低级模型
+  'claude-3-5-haiku-20241022': 'gemini-2.0-flash',  // 低级模型
+  'claude-3-opus-20240229': 'gemini-2.0-flash',     // 低级模型
+  'claude-3-sonnet-20240229': 'gemini-2.0-flash',   // 低级模型
 
   // 嵌入模型
   'text-embedding-ada-002': 'text-embedding-004',
@@ -117,9 +117,9 @@ export const SYSTEM_LIMITS = {
 
 // 免费方案速率限制配置
 export const FREE_TIER_LIMITS = {
-  'gemini-2.5-pro': { rpm: 5, tpm: 250000, rpd: 100 },
-  'gemini-2.5-flash': { rpm: 10, tpm: 250000, rpd: 250 },
-  'gemini-2.0-flash': { rpm: 15, tpm: 1000000, rpd: 200 },
+  'gemini-2.5-pro': { rpm: 5, tpm: 250000, rpd: 100 },    // 高级模型
+  'gemini-2.5-flash': { rpm: 10, tpm: 250000, rpd: 250 }, // 中级模型
+  'gemini-2.0-flash': { rpm: 15, tpm: 1000000, rpd: 200 }, // 低级模型 - 已修正为官方文档标准
   'text-embedding-004': { rpm: 100, tpm: 1000000, rpd: 1000 },
 } as const;
 
@@ -132,4 +132,29 @@ export const ERROR_MESSAGES = {
   INTERNAL_ERROR: 'Internal server error. Please try again.',
   TIMEOUT: 'Request timeout. Please try again.',
   INVALID_REQUEST: 'Invalid request format. Please check your request.',
+} as const;
+
+// 黑名单配置（Cloudflare KV）
+export const BLACKLIST_CONFIG = {
+  TTL: 24 * 60 * 60,                  // 黑名单24小时
+  KEY_PREFIX: 'blacklist:',            // KV键前缀
+  MAX_ENTRIES: 10000,                  // 最大黑名单条目数
+  CLEANUP_INTERVAL: 3600000,           // 清理间隔1小时
+} as const;
+
+// 配额计算配置（D1数据库）
+export const QUOTA_CONFIG = {
+  CLEANUP_DAYS: 30,                   // 清理30天前的日志
+  BATCH_SIZE: 1000,                   // 批量查询大小
+  CLEANUP_INTERVAL: 86400000,         // 清理间隔24小时
+  MAX_RETENTION_DAYS: 90,             // 最大保留天数
+} as const;
+
+// 内存缓存配置
+export const MEMORY_CACHE_CONFIG = {
+  MODEL_LIST_TTL: 3600000,            // 模型列表1小时
+  HEALTH_CHECK_TTL: 300000,           // 健康检查5分钟
+  MAX_SIZE: 1000,                     // 最大缓存条目
+  CLEANUP_INTERVAL: 300000,           // 清理间隔5分钟
+  MAX_MEMORY_USAGE: 50 * 1024 * 1024, // 最大内存使用50MB
 } as const;

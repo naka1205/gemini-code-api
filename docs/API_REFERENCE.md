@@ -63,10 +63,10 @@ Authorization: Bearer KEY1,KEY2,KEY3
 
 | 客户端模型 | Gemini 模型 | 描述 |
 |------------|-------------|------|
-| `gpt-4` | `gemini-2.0-flash-exp` | 具有增强推理能力的最新 Gemini 模型 |
-| `gpt-3.5-turbo` | `gemini-1.5-flash` | 快速高效的模型 |
-| `gpt-4o` | `gemini-2.0-flash-exp` | 高性能模型 |
-| `gpt-4o-mini` | `gemini-1.5-flash` | 轻量级模型 |
+| `gpt-4` | `gemini-2.5-flash` | 中级模型，平衡性能和效率 |
+| `gpt-3.5-turbo` | `gemini-2.0-flash` | 低级模型，快速高效 |
+| `gpt-4o` | `gemini-2.5-pro` | 高级模型，最强推理能力 |
+| `gpt-4o-mini` | `gemini-2.5-flash` | 中级模型，平衡性能和效率 |
 
 ### 聊天完成
 
@@ -334,11 +334,11 @@ try {
 
 ### Gemini API 免费层级限制
 
-| 模型 | RPM | TPM | RPD |
-|------|-----|-----|-----|
-| `gemini-2.0-flash-exp` | 15 | 15,000 | 1,500 |
-| `gemini-1.5-flash` | 15 | 15,000 | 1,500 |
-| `gemini-1.5-pro` | 15 | 15,000 | 1,500 |
+| 模型 | 等级 | RPM | TPM | RPD |
+|------|------|-----|-----|-----|
+| `gemini-2.0-flash` | 低级 | 15 | 1,000,000 | 200 |
+| `gemini-2.5-flash` | 中级 | 10 | 250,000 | 250 |
+| `gemini-2.5-pro` | 高级 | 5 | 250,000 | 100 |
 
 ### Claude API 免费层级限制
 

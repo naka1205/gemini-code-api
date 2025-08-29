@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { detectClientType } from '../../middleware/auth/detector.js';
 import { extractAndValidateApiKeys } from '../../middleware/auth/extractor.js';
-import { throwError } from '../../middleware/error-handler.js';
+import { throwError } from '../../adapters/base/errors.js';
 import { getLogger } from '../../middleware/logger.js';
 import { MODEL_MAPPINGS } from '../../utils/constants.js';
 
@@ -97,8 +97,11 @@ export function createEmbeddingsRoute(): Hono {
         throwError.validation('Fields "model" and "input" are required');
       }
 
-      // 映射OpenAI嵌入模型到Gemini模型
-      const geminiModel = MODEL_MAPPINGS[requestBody.model as keyof typeof MODEL_MAPPINGS] || 'text-embedding-004';
+      // 验证模型是否支持
+      const geminiModel = MODEL_MAPPINGS[requestBody.model as keyof typeof MODEL_MAPPINGS];
+      if (!geminiModel) {
+        throwError.validation(`Model '${requestBody.model}' is not supported. Please use one of the supported models.`);
+      }
       logger.info('Model mapping', { openaiModel: requestBody.model, geminiModel });
 
       // 处理输入文本（可能是字符串或字符串数组）
@@ -166,6 +169,34 @@ export function createEmbeddingsRoute(): Hono {
           total_tokens: inputTexts.reduce((sum: number, text: string) => sum + Math.ceil(text.length / 4), 0)
         }
       };
+
+      // 记录使用情况（异步）
+      try {
+        const { getGlobalLoadBalancer } = await import('../../services/balancer/index.js');
+        const loadBalancer = getGlobalLoadBalancer();
+        if (loadBalancer) {
+          const requestSize = new TextEncoder().encode(JSON.stringify(requestBody)).length;
+          const responseSize = new TextEncoder().encode(JSON.stringify(openaiResponse)).length;
+          c.executionCtx?.waitUntil(loadBalancer.recordUsage(
+            selectedKey,
+            requestBody.model,
+            openaiResponse.usage.prompt_tokens || 0,
+            0,
+            {
+              originalModel: requestBody.model,
+              endpoint: '/v1/embeddings',
+              clientType: detectionResult!.clientType,
+              statusCode: 200,
+              responseTimeMs: 0,
+              clientIP: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '',
+              userAgent: c.req.header('user-agent') || '',
+              requestSize,
+              responseSize,
+              isStream: false,
+            }
+          ));
+        }
+      } catch (_) {}
 
       // 设置响应头
       c.header('Content-Type', 'application/json');

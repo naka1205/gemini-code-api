@@ -4,13 +4,13 @@
  */
 import { BaseAdapter, type AdapterContext, type AdapterResult, type StreamingAdapterResult } from '../base/adapter.js';
 import { RequestBodyValidator } from '../base/validator.js';
-import { AdapterErrorHandler } from '../base/errors.js';
+import { log } from '../../utils/logger.js';
+import { throwError } from '../base/errors.js';
 import { ClaudeTransformer, type ClaudeRequest } from './transformer.js';
-import { createClaudeStreamTransformer } from './streaming.js';
-import { API_CONFIG } from '../../utils/constants.js';
 
 /**
  * Claude消息适配器
+ * 处理Claude /v1/messages API兼容性
  */
 export class ClaudeMessageAdapter extends BaseAdapter {
   constructor() {
@@ -18,7 +18,7 @@ export class ClaudeMessageAdapter extends BaseAdapter {
   }
 
   /**
-   * 验证Claude消息请求
+   * 验证请求体
    */
   protected async validateRequest(context: AdapterContext): Promise<void> {
     const body = await RequestBodyValidator.validateCommonRequestBody(context.request) as ClaudeRequest;
@@ -32,7 +32,6 @@ export class ClaudeMessageAdapter extends BaseAdapter {
     RequestBodyValidator.validateNumberRange(body.max_tokens, 'max_tokens', 1, 8192);
 
     // 验证消息格式
-    RequestBodyValidator.validateArrayLength(body.messages, 'messages', 1, 100);
     this.validateClaudeMessages(body.messages);
 
     // 验证可选参数
@@ -59,54 +58,77 @@ export class ClaudeMessageAdapter extends BaseAdapter {
       RequestBodyValidator.validateStringLength(body.system, 'system', 0, 32000);
     }
 
-    // 检查是否为流式请求
-    if (body.stream) {
-      context.context.set('isStreaming', true);
+    // 验证工具配置
+    if (body.tools !== undefined) {
+      RequestBodyValidator.validateArrayLength(body.tools, 'tools', 0, 128);
+      body.tools.forEach((tool, index) => {
+        this.validateClaudeTool(tool, `tools[${index}]`);
+      });
     }
-
-    // 将验证后的请求体存储到上下文
-    context.context.set('requestBody', body);
   }
 
   /**
-   * 转换Claude请求为Gemini格式
+   * 转换请求格式
    */
   protected async transformRequest(context: AdapterContext): Promise<any> {
-    const claudeRequest = context.context.get('requestBody') as ClaudeRequest;
-    
     try {
+      const claudeRequest = await RequestBodyValidator.validateCommonRequestBody(context.request) as ClaudeRequest;
       return ClaudeTransformer.transformRequest(claudeRequest, context);
     } catch (error) {
-      AdapterErrorHandler.handleTransformError(error as Error, 'claude-to-gemini');
+      log.error('Error transforming Claude request', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Claude request', 400, { originalError: error });
     }
   }
 
   /**
-   * 转换Gemini响应为Claude格式
+   * 转换响应格式
    */
   protected async transformResponse(response: any, context: AdapterContext): Promise<AdapterResult> {
     try {
-      const claudeResponse = ClaudeTransformer.transformResponse(response, context);
-      
-      // 提取token使用信息用于指标记录
-      if (claudeResponse.usage) {
-        context.context.set('tokenUsage', {
-          promptTokens: claudeResponse.usage.input_tokens,
-          completionTokens: claudeResponse.usage.output_tokens,
-          totalTokens: claudeResponse.usage.input_tokens + claudeResponse.usage.output_tokens,
-        });
+      // 验证响应格式
+      if (!response || typeof response !== 'object') {
+        throwError.api('Invalid response format from Claude API');
       }
 
-      return {
-        data: claudeResponse,
+      if (!response.content || !Array.isArray(response.content)) {
+        throwError.api('Invalid response content from Claude API');
+      }
+
+      // 转换响应格式
+      const transformedResponse: AdapterResult = {
+        data: {
+          id: response.id || `claude-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: context.clientType,
+          choices: response.content.map((content: any, index: number) => ({
+            index,
+            message: {
+              role: 'assistant',
+              content: content.text || '',
+            },
+            finish_reason: 'stop',
+          })),
+          usage: response.usage ? {
+            prompt_tokens: response.usage.input_tokens || 0,
+            completion_tokens: response.usage.output_tokens || 0,
+            total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+          } : undefined,
+        },
         statusCode: 200,
         headers: {
           'Content-Type': 'application/json',
         },
       };
+
+      return transformedResponse;
     } catch (error) {
-      AdapterErrorHandler.handleTransformError(error as Error, 'gemini-to-claude');
+      log.error('Error transforming Claude response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Claude response', 502, { originalError: error });
     }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
 
   /**
@@ -116,102 +138,136 @@ export class ClaudeMessageAdapter extends BaseAdapter {
     transformedRequest: any,
     context: AdapterContext
   ): Promise<StreamingAdapterResult> {
-    if (!context.selectedKey) {
-      throw new Error('No API key selected');
-    }
-
-    // 构建流式请求URL
-    const url = this.buildStreamingUrl(transformedRequest, context);
-    const headers = this.buildGeminiHeaders(context.selectedKey, context);
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(transformedRequest),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any;
-        AdapterErrorHandler.handleGeminiError(errorData, context.selectedKey);
+      if (!context.selectedKey) {
+        throwError.api('No API key selected');
       }
 
-      if (!response.body) {
-        throw new Error('No response body for streaming');
+      // 调用Gemini API获取流式响应
+      const response = await this.callGeminiApi(transformedRequest, context);
+      
+      if (!response || !response.body) {
+        throwError.api('No response body for streaming');
       }
 
-      // 创建Claude格式的流式转换器
-      const transformStream = this.createClaudeStreamTransform(context);
+      // 转换流式响应为Claude格式
+      return this.transformStreamingResponse(response, context);
+    } catch (error) {
+      log.error('Error creating Claude streaming response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to create Claude streaming response', 502, { originalError: error });
+    }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
+  }
+
+  /**
+   * 转换流式响应
+   */
+  protected async transformStreamingResponse(
+    response: any,
+    context: AdapterContext
+  ): Promise<StreamingAdapterResult> {
+    try {
+      if (!response || !response.body) {
+        throwError.api('No response body for streaming');
+      }
+
+             // 创建流式转换器
+       const id = `claude-${Date.now()}`;
+      let buffer = "";
+      const MAX_BUFFER_SIZE = 1024 * 1024; // 1MB限制
+
+      const transformStream = response.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new TransformStream({
+          transform(chunk: string, controller) {
+            buffer += chunk;
+            
+                         // 检查buffer大小，防止内存泄漏
+             if (buffer.length > MAX_BUFFER_SIZE) {
+               log.error("Buffer size exceeded limit, clearing buffer to prevent memory leak", {
+                 bufferLength: buffer.length,
+                 maxSize: MAX_BUFFER_SIZE
+               } as any);
+              buffer = buffer.substring(buffer.length - MAX_BUFFER_SIZE / 2);
+            }
+            
+            // 处理SSE格式
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.substring(6);
+                if (data === '[DONE]') {
+                  controller.enqueue('data: [DONE]\n\n');
+                } else {
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.type === 'content_block_delta') {
+                      const transformed = {
+                        id,
+                        object: 'chat.completion.chunk',
+                        created: Math.floor(Date.now() / 1000),
+                        model: context.clientType,
+                        choices: [{
+                          index: 0,
+                          delta: {
+                            content: parsed.delta?.text || '',
+                          },
+                          finish_reason: null,
+                        }],
+                      };
+                      controller.enqueue(`data: ${JSON.stringify(transformed)}\n\n`);
+                    }
+                  } catch (err) {
+                    log.warn('Error parsing streaming data', { data, error: err });
+                  }
+                }
+              }
+            }
+          },
+                     flush() {
+             if (buffer) {
+               log.warn('Unprocessed buffer data', { bufferLength: buffer.length });
+             }
+             buffer = "";
+           }
+        }))
+        .pipeThrough(new TextEncoderStream());
 
       return {
-        stream: response.body.pipeThrough(transformStream),
+        stream: transformStream,
         statusCode: 200,
         headers: {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type, x-api-key, anthropic-version',
         },
       };
     } catch (error) {
-      AdapterErrorHandler.handleStreamingError(error as Error, context.selectedKey);
+      log.error('Error transforming Claude streaming response', error instanceof Error ? error : undefined);
+      throwError.api('Failed to transform Claude streaming response', 502, { originalError: error });
     }
+    
+    // 确保函数总是有返回值
+    throw new Error('Unreachable code');
   }
-
-  /**
-   * 构建Gemini API URL
-   */
-  protected buildGeminiApiUrl(_request: any, context: AdapterContext): string {
-    const model = context.context.get('geminiModel') || 'gemini-2.5-pro';
-    // 【调试】尝试使用 v1 API 端点
-    return `${API_CONFIG.GEMINI_BASE_URL}/v1/models/${model}:generateContent`;
-  }
-
-  /**
-   * 构建流式请求URL
-   */
-  private buildStreamingUrl(_request: any, context: AdapterContext): string {
-    const model = context.context.get('geminiModel') || 'gemini-2.5-pro';
-    // 【调试】尝试使用 v1 API 端点
-    return `${API_CONFIG.GEMINI_BASE_URL}/v1/models/${model}:streamGenerateContent`;
-  }
-
-  /**
-   * 从上下文提取模型信息
-   */
-  protected extractModelFromContext(context: AdapterContext): string {
-    const claudeRequest = context.context.get('requestBody') as ClaudeRequest;
-    return claudeRequest?.model || 'claude-3-sonnet-20240229';
-  }
-
-  /**
-   * 获取支持的功能
-   */
-  supportsFeature(feature: string): boolean {
-    const supportedFeatures = [
-      'chat',
-      'completion',
-      'streaming',
-      'system-messages',
-      'vision', // 通过Gemini 2.5支持
-    ];
-    return supportedFeatures.includes(feature);
-  }
-
-  // === 私有辅助方法 ===
 
   /**
    * 验证Claude消息格式
    */
   private validateClaudeMessages(messages: any[]): void {
-    let lastRole: string | null = null;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throwError.validation('Messages must be a non-empty array');
+    }
 
     messages.forEach((message, index) => {
       const fieldPath = `messages[${index}]`;
       
       if (!message || typeof message !== 'object') {
-        throw new Error(`${fieldPath} must be an object`);
+        throwError.validation(`${fieldPath} must be an object`);
       }
 
       RequestBodyValidator.validateRequired(message.role, `${fieldPath}.role`);
@@ -221,29 +277,30 @@ export class ClaudeMessageAdapter extends BaseAdapter {
       RequestBodyValidator.validateEnum(message.role, `${fieldPath}.role`, ['user', 'assistant']);
 
       // Claude要求交替的用户和助手消息
-      if (lastRole === message.role) {
-        throw new Error(`${fieldPath}.role: messages must alternate between 'user' and 'assistant'`);
+      if (index > 0) {
+        const prevMessage = messages[index - 1];
+        if (message.role === prevMessage.role) {
+          throwError.validation(`${fieldPath}.role: messages must alternate between 'user' and 'assistant'`);
+        }
       }
 
-      // 第一条消息必须是user
+      // 第一条消息必须是用户消息
       if (index === 0 && message.role !== 'user') {
-        throw new Error('First message must have role "user"');
+        throwError.validation('First message must have role "user"');
       }
 
-      // 验证content格式
+      // 最后一条消息必须是用户消息
+      if (index === messages.length - 1 && message.role !== 'user') {
+        throwError.validation('Last message must have role "user"');
+      }
+
+      // 验证消息内容
       this.validateMessageContent(message.content, `${fieldPath}.content`);
-
-      lastRole = message.role;
     });
-
-    // 最后一条消息必须是user
-    if (messages.length > 0 && messages[messages.length - 1].role !== 'user') {
-      throw new Error('Last message must have role "user"');
-    }
   }
 
   /**
-   * 验证消息内容格式
+   * 验证消息内容
    */
   private validateMessageContent(content: any, fieldPath: string): void {
     if (typeof content === 'string') {
@@ -255,7 +312,7 @@ export class ClaudeMessageAdapter extends BaseAdapter {
         const itemPath = `${fieldPath}[${index}]`;
         
         if (!item || typeof item !== 'object') {
-          throw new Error(`${itemPath} must be an object`);
+          throwError.validation(`${itemPath} must be an object`);
         }
 
         RequestBodyValidator.validateRequired(item.type, `${itemPath}.type`);
@@ -270,15 +327,30 @@ export class ClaudeMessageAdapter extends BaseAdapter {
         }
       });
     } else {
-      throw new Error(`${fieldPath} must be a string or array`);
+      throwError.validation(`${fieldPath} must be a string or array`);
     }
   }
 
   /**
-   * 创建Claude格式的流式转换器
+   * 验证Claude工具定义
    */
-  private createClaudeStreamTransform(context: AdapterContext): TransformStream {
-    const model = this.extractModelFromContext(context);
-    return createClaudeStreamTransformer(model, { emitPrelude: true });
+  private validateClaudeTool(tool: any, fieldPath: string): void {
+    if (!tool || typeof tool !== 'object') {
+      throwError.validation(`${fieldPath} must be an object`);
+    }
+
+    RequestBodyValidator.validateRequired(tool.name, `${fieldPath}.name`);
+    RequestBodyValidator.validateStringLength(tool.name, `${fieldPath}.name`, 1, 64);
+
+    if (tool.description) {
+      RequestBodyValidator.validateStringLength(tool.description, `${fieldPath}.description`, 0, 1000);
+    }
+
+    if (tool.input_schema) {
+      // 这里可以添加JSON Schema验证
+      if (typeof tool.input_schema !== 'object') {
+        throwError.validation(`${fieldPath}.input_schema must be an object`);
+      }
+    }
   }
 }

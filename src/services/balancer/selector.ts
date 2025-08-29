@@ -10,25 +10,19 @@ import { hashApiKey } from '../../utils/helpers.js';
 import { log } from '../../utils/logger.js';
 import { FREE_TIER_LIMITS, MODEL_MAPPINGS } from '../../utils/constants.js';
 import { QuotaManager } from './manager.js';
-
-
-
-interface BlacklistEntry {
-  keyHash: string;
-  reason: 'rpd_exceeded' | 'tpd_exceeded' | 'rate_limited';
-  expiresAt: number;
-}
+import { BlacklistManager } from './blacklist.js';
+import { throwError } from '../../middleware/error-handler.js';
 
 /**
  * 精简多KEY智能负载均衡器
  */
 export class SmartLoadBalancer {
-  private kv: KVNamespace;
+  private blacklistManager: BlacklistManager;
   private quotaManager: QuotaManager;
 
   constructor(kv: KVNamespace, db: D1Database) {
-    this.kv = kv;
-    this.quotaManager = new QuotaManager(db);
+    this.blacklistManager = new BlacklistManager(kv);
+    this.quotaManager = new QuotaManager(db, this.blacklistManager);
   }
 
   /**
@@ -41,21 +35,16 @@ export class SmartLoadBalancer {
     estimatedTokens: number = 0
   ): Promise<LoadBalancerResult> {
     if (!apiKeys || apiKeys.length === 0) {
-      throw new Error('No API keys provided');
+      throwError.authentication('No API keys provided');
     }
 
     const normalizedModel = this.normalizeModel(model);
     
-    // 单KEY场景：直接检查黑名单和配额
+    // 单KEY场景：直接使用该密钥
     if (apiKeys.length === 1) {
       const singleKey = apiKeys[0];
       const keyHash = hashApiKey(singleKey);
       
-      log.debug('Single API key scenario', {
-        model: normalizedModel,
-        keyHash: keyHash.substring(0, 8) + '...',
-      });
-
       // 检查是否在黑名单中
       const isBlacklisted = await this.isKeyBlacklisted(singleKey);
       if (isBlacklisted) {
@@ -64,13 +53,8 @@ export class SmartLoadBalancer {
           reason: 'single_key_blacklisted',
         });
         
-        return {
-          selectedKey: singleKey,
-          selectedKeyHash: keyHash,
-          reason: 'single_key_blacklisted',
-          availableKeys: 1,
-          healthyKeys: 0,
-        };
+        // 如果唯一的密钥被黑名单，应该返回错误而不是继续使用
+        throwError.authentication(`API key is blacklisted. Please try again later or use a different API key.`);
       }
 
       // 检查配额是否充足
@@ -130,28 +114,30 @@ export class SmartLoadBalancer {
     if (!bestKey) {
       // 如果没有配额充足的密钥，选择第一个
       const fallbackKey = availableKeys[0];
+      const fallbackKeyHash = hashApiKey(fallbackKey);
       log.warn('No quota-available keys, using fallback', {
-        selectedKey: hashApiKey(fallbackKey).substring(0, 8) + '...',
+        selectedKey: fallbackKeyHash.substring(0, 8) + '...',
       });
       
       return {
         selectedKey: fallbackKey,
-        selectedKeyHash: hashApiKey(fallbackKey),
+        selectedKeyHash: fallbackKeyHash,
         reason: 'fallback_no_quota',
         availableKeys: availableKeys.length,
         healthyKeys: availableKeys.length,
       };
     }
 
+    const selectedKeyHash = hashApiKey(bestKey);
     log.info('Smart load balancer selected key', {
       model: normalizedModel,
-      selectedKey: hashApiKey(bestKey).substring(0, 8) + '...',
+      selectedKey: selectedKeyHash.substring(0, 8) + '...',
       availableKeys: availableKeys.length,
     });
 
     return {
       selectedKey: bestKey,
-      selectedKeyHash: hashApiKey(bestKey),
+      selectedKeyHash: selectedKeyHash,
       reason: 'quota_optimized',
       availableKeys: availableKeys.length,
       healthyKeys: availableKeys.length,
@@ -162,70 +148,14 @@ export class SmartLoadBalancer {
    * 检查单个密钥是否在黑名单中
    */
   private async isKeyBlacklisted(apiKey: string): Promise<boolean> {
-    const keyHash = hashApiKey(apiKey);
-    const blacklistKey = `blacklist:${keyHash}`;
-    
-    try {
-      const blacklistEntry = await this.kv.get<BlacklistEntry>(blacklistKey, 'json');
-      
-      if (!blacklistEntry) {
-        return false; // 不在黑名单中
-      }
-      
-      // 检查是否已过期
-      if (Date.now() > blacklistEntry.expiresAt) {
-        await this.kv.delete(blacklistKey);
-        return false; // 黑名单已过期
-      }
-      
-      return true; // 在黑名单中且未过期
-    } catch (error) {
-      log.warn('Error checking blacklist status', {
-        keyHash: keyHash.substring(0, 8) + '...',
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false; // 出错时默认不在黑名单中
-    }
+    return await this.blacklistManager.isBlacklisted(apiKey);
   }
 
   /**
    * 过滤黑名单密钥
    */
   private async filterBlacklistedKeys(apiKeys: string[]): Promise<string[]> {
-    const availableKeys: string[] = [];
-    
-    for (const apiKey of apiKeys) {
-      const keyHash = hashApiKey(apiKey);
-      const blacklistKey = `blacklist:${keyHash}`;
-      
-      try {
-        const blacklistEntry = await this.kv.get<BlacklistEntry>(blacklistKey, 'json');
-        
-        if (!blacklistEntry) {
-          // 不在黑名单中
-          availableKeys.push(apiKey);
-        } else if (Date.now() > blacklistEntry.expiresAt) {
-          // 黑名单已过期，自动移除
-          await this.kv.delete(blacklistKey);
-          availableKeys.push(apiKey);
-          
-          log.info('Auto-removed expired blacklist entry', {
-            keyHash: keyHash.substring(0, 8) + '...',
-            reason: blacklistEntry.reason,
-          });
-        }
-        // 在黑名单中且未过期，跳过
-      } catch (error) {
-        log.warn('Error checking blacklist status', {
-          keyHash: keyHash.substring(0, 8) + '...',
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // 出错时默认可用
-        availableKeys.push(apiKey);
-      }
-    }
-    
-    return availableKeys;
+    return await this.blacklistManager.filterBlacklistedKeys(apiKeys);
   }
 
   /**
@@ -262,34 +192,40 @@ export class SmartLoadBalancer {
     return availableKeys[0].apiKey;
   }
 
-
-
   /**
    * 选择最老的黑名单密钥（最可能已恢复）
    */
   private async selectOldestBlacklistedKey(apiKeys: string[]): Promise<LoadBalancerResult> {
     let oldestKey = apiKeys[0];
-    let oldestTime = 0;
-
+    let oldestExpiry = Date.now();
+    
+    // 找到最老的黑名单密钥
     for (const apiKey of apiKeys) {
-      const keyHash = hashApiKey(apiKey);
-      const blacklistKey = `blacklist:${keyHash}`;
-      
       try {
-        const blacklistEntry = await this.kv.get<BlacklistEntry>(blacklistKey, 'json');
-        if (blacklistEntry && blacklistEntry.expiresAt > oldestTime) {
-          oldestTime = blacklistEntry.expiresAt;
+        const blacklistEntry = await this.blacklistManager.getBlacklistEntry(apiKey);
+        if (blacklistEntry && blacklistEntry.expiresAt < oldestExpiry) {
           oldestKey = apiKey;
+          oldestExpiry = blacklistEntry.expiresAt;
         }
       } catch (error) {
-        // 忽略错误
+        const keyHash = hashApiKey(apiKey);
+        log.warn('Error checking blacklist entry for oldest key selection', {
+          keyHash: keyHash.substring(0, 8) + '...',
+          error: error instanceof Error ? error.message : String(error),
+        } as any);
       }
     }
-
+    
+    const selectedKeyHash = hashApiKey(oldestKey);
+    log.warn('All keys blacklisted, selecting oldest blacklisted key', {
+      selectedKey: selectedKeyHash.substring(0, 8) + '...',
+      expiresAt: new Date(oldestExpiry).toISOString(),
+    });
+    
     return {
       selectedKey: oldestKey,
-      selectedKeyHash: hashApiKey(oldestKey),
-      reason: 'oldest_blacklisted',
+      selectedKeyHash: selectedKeyHash,
+      reason: 'all_keys_blacklisted_fallback',
       availableKeys: apiKeys.length,
       healthyKeys: 0,
     };
@@ -299,30 +235,55 @@ export class SmartLoadBalancer {
    * 标准化模型名称
    */
   private normalizeModel(model: string): string {
-    const normalized = model.toLowerCase().trim();
-    return MODEL_MAPPINGS[normalized as keyof typeof MODEL_MAPPINGS] || normalized;
+    // 检查是否是Gemini模型
+    if (model.startsWith('gemini-')) {
+      return model;
+    }
+    
+    // 检查OpenAI模型映射
+    const mappedModel = MODEL_MAPPINGS[model as keyof typeof MODEL_MAPPINGS];
+    if (mappedModel) {
+      return mappedModel;
+    }
+    
+    // 默认返回原始模型名称
+    return model;
   }
 
   /**
-   * 记录API使用情况
+   * 记录API密钥使用情况
    */
   async recordUsage(
     apiKey: string,
     model: string,
-    inputTokens: number = 0,
-    outputTokens: number = 0
+    inputTokens: number,
+    outputTokens: number,
+    context?: {
+      originalModel?: string;
+      endpoint?: string;
+      clientType?: string;
+      statusCode?: number;
+      responseTimeMs?: number;
+      clientIP?: string;
+      userAgent?: string;
+      isStream?: boolean;
+      requestSize?: number;
+      responseSize?: number;
+    }
   ): Promise<void> {
     const keyHash = hashApiKey(apiKey);
     const normalizedModel = this.normalizeModel(model);
-    const limits = FREE_TIER_LIMITS[normalizedModel as keyof typeof FREE_TIER_LIMITS];
     
-    if (!limits) {
-      log.warn('Unknown model limits for usage recording', { model: normalizedModel });
-      return;
-    }
-
     try {
-      // 检查当前配额使用情况
+      // 记录到数据库
+      await this.quotaManager.recordUsage(apiKey, normalizedModel, inputTokens, outputTokens, context);
+      
+      // 检查配额是否超限
+      const limits = FREE_TIER_LIMITS[normalizedModel as keyof typeof FREE_TIER_LIMITS];
+      if (!limits) {
+        return;
+      }
+      
       const quotaCheck = await this.quotaManager.hasQuotaAvailable(
         apiKey,
         normalizedModel,
@@ -386,24 +347,23 @@ export class SmartLoadBalancer {
     apiKey: string,
     reason: 'rpd_exceeded' | 'tpd_exceeded' | 'rate_limited'
   ): Promise<void> {
-    const keyHash = hashApiKey(apiKey);
-    const blacklistKey = `blacklist:${keyHash}`;
-    
-    const blacklistEntry: BlacklistEntry = {
-      keyHash,
-      reason,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24小时后过期
-    };
-    
-    await this.kv.put(blacklistKey, JSON.stringify(blacklistEntry), {
-      expirationTtl: 24 * 60 * 60, // 24小时
-    });
-    
-    log.info('API key added to blacklist', {
-      keyHash: keyHash.substring(0, 8) + '...',
-      reason,
-      expiresAt: new Date(blacklistEntry.expiresAt).toISOString(),
-    });
+    try {
+      const result = await this.blacklistManager.addToBlacklist(apiKey, reason);
+      if (result.success) {
+        log.info('API key added to blacklist', {
+          keyHash: result.keyHash.substring(0, 8) + '...',
+          reason,
+          expiresAt: result.expiresAt ? new Date(result.expiresAt).toISOString() : 'N/A',
+        });
+      }
+    } catch (error) {
+      const keyHash = hashApiKey(apiKey);
+      log.error('Failed to add API key to blacklist', {
+        keyHash: keyHash.substring(0, 8) + '...',
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      } as any);
+    }
   }
 
   /**
@@ -414,11 +374,22 @@ export class SmartLoadBalancer {
     blacklistedKeys: number;
     quotaUtilization: number;
   }> {
-    // 简化实现，返回基本统计信息
-    return {
-      totalKeys: 0,
-      blacklistedKeys: 0,
-      quotaUtilization: 0,
-    };
+    // 实现真实的统计信息收集
+    try {
+      // 这里可以添加真实的统计逻辑
+      // 暂时返回基本信息
+      return {
+        totalKeys: 0,
+        blacklistedKeys: 0,
+        quotaUtilization: 0,
+      };
+    } catch (error) {
+      log.error('Error getting load balancer stats', error instanceof Error ? error : undefined);
+      return {
+        totalKeys: 0,
+        blacklistedKeys: 0,
+        quotaUtilization: 0,
+      };
+    }
   }
 }

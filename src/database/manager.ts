@@ -134,19 +134,18 @@ export class DatabaseManager {
           deletedCount: result.data || 0
         };
       } else {
-        return {
+                      return {
           success: false,
           deletedCount: 0,
-          error: result.error
+          ...(result.error && { error: result.error })
         };
       }
     } catch (error) {
-      const errorMessage = (error as Error).message;
       log.error('Database cleanup failed', error as Error);
       return {
         success: false,
         deletedCount: 0,
-        error: errorMessage || 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }

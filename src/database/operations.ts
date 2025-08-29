@@ -20,6 +20,7 @@ import {
 } from './schema.js';
 import type { ClientType, DatabaseResult, QueryOptions } from '../types/index.js';
 import { generateId, hashApiKey } from '../utils/index.js';
+import { sql } from 'drizzle-orm';
 
 export class DatabaseOperations {
   constructor(private db: ReturnType<typeof drizzle>) {}
@@ -463,6 +464,156 @@ export class DatabaseOperations {
       return { 
         success: false, 
         error: `Failed to get database stats: ${(error as Error).message}` 
+      };
+    }
+  }
+
+  /**
+   * 生成每日系统统计汇总
+   */
+  async generateDailyStats(date: string): Promise<DatabaseResult<SystemStat>> {
+    try {
+      const startOfDay = new Date(date).getTime();
+      const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+
+      // 获取当日请求数据
+      const dailyRequests = await this.db
+        .select()
+        .from(requestLogs)
+        .where(and(
+          gte(requestLogs.timestamp, startOfDay),
+          lte(requestLogs.timestamp, endOfDay)
+        ));
+
+      // 计算统计数据
+      const stats = {
+        date,
+        totalRequests: dailyRequests.length,
+        successfulRequests: dailyRequests.filter(r => r.statusCode < 400).length,
+        failedRequests: dailyRequests.filter(r => r.statusCode >= 400).length,
+        openaiRequests: dailyRequests.filter(r => r.clientType === 'openai').length,
+        claudeRequests: dailyRequests.filter(r => r.clientType === 'claude').length,
+        geminiRequests: dailyRequests.filter(r => r.clientType === 'gemini').length,
+        unknownRequests: dailyRequests.filter(r => r.clientType === 'unknown').length,
+        totalTokensUsed: dailyRequests.reduce((sum, r) => sum + (r.totalTokens || 0), 0),
+        totalInputTokens: dailyRequests.reduce((sum, r) => sum + (r.inputTokens || 0), 0),
+        totalOutputTokens: dailyRequests.reduce((sum, r) => sum + (r.outputTokens || 0), 0),
+        averageResponseTime: dailyRequests.length > 0 
+          ? dailyRequests.reduce((sum, r) => sum + r.responseTime, 0) / dailyRequests.length 
+          : 0,
+        minResponseTime: dailyRequests.length > 0 
+          ? Math.min(...dailyRequests.map(r => r.responseTime)) 
+          : null,
+        maxResponseTime: dailyRequests.length > 0 
+          ? Math.max(...dailyRequests.map(r => r.responseTime)) 
+          : null,
+        errorRate: dailyRequests.length > 0 
+          ? dailyRequests.filter(r => r.hasError).length / dailyRequests.length 
+          : 0,
+        timeoutCount: dailyRequests.filter(r => r.statusCode === 408).length,
+        rateLimitCount: dailyRequests.filter(r => r.statusCode === 429).length,
+        authErrorCount: dailyRequests.filter(r => r.statusCode === 401 || r.statusCode === 403).length,
+        totalRequestSize: dailyRequests.reduce((sum, r) => sum + (r.requestSize || 0), 0),
+        totalResponseSize: dailyRequests.reduce((sum, r) => sum + (r.responseSize || 0), 0),
+        streamRequestCount: dailyRequests.filter(r => r.isStream).length,
+        uniqueApiKeys: new Set(dailyRequests.map(r => r.apiKeyHash)).size,
+        activeApiKeys: new Set(dailyRequests.map(r => r.apiKeyHash)).size,
+        updatedAt: Date.now(),
+      };
+
+      // 插入或更新系统统计
+      await this.db
+        .insert(systemStats)
+        .values(stats)
+        .onConflictDoUpdate({
+          target: systemStats.date,
+          set: stats
+        });
+
+      return { success: true, data: stats };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to generate daily stats: ${(error as Error).message}` 
+      };
+    }
+  }
+
+  /**
+   * 批量清理过期数据
+   */
+  async batchCleanupOldData(retentionDays: number = 30, batchSize: number = 1000): Promise<DatabaseResult<number>> {
+    try {
+      const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+      let totalDeleted = 0;
+
+      // 分批清理请求日志 - 使用子查询限制数量
+      let deletedCount = 1;
+      while (deletedCount > 0) {
+        // 先查询要删除的ID
+        const idsToDelete = await this.db
+          .select({ id: requestLogs.id })
+          .from(requestLogs)
+          .where(lte(requestLogs.timestamp, cutoffTime))
+          .limit(batchSize);
+        
+        if (idsToDelete.length === 0) break;
+        
+        // 删除这些ID的记录
+        await this.db
+          .delete(requestLogs)
+          .where(sql`${requestLogs.id} IN (${sql.join(idsToDelete.map(r => sql`${r.id}`), sql`, `)})`);
+        
+        deletedCount = idsToDelete.length;
+        totalDeleted += deletedCount;
+      }
+
+      // 分批清理错误日志
+      deletedCount = 1;
+      while (deletedCount > 0) {
+        // 先查询要删除的ID
+        const idsToDelete = await this.db
+          .select({ id: errorLogs.id })
+          .from(errorLogs)
+          .where(lte(errorLogs.timestamp, cutoffTime))
+          .limit(batchSize);
+        
+        if (idsToDelete.length === 0) break;
+        
+        // 删除这些ID的记录
+        await this.db
+          .delete(errorLogs)
+          .where(sql`${errorLogs.id} IN (${sql.join(idsToDelete.map(r => sql`${r.id}`), sql`, `)})`);
+        
+        deletedCount = idsToDelete.length;
+        totalDeleted += deletedCount;
+      }
+
+      return { success: true, data: totalDeleted };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to batch cleanup old data: ${(error as Error).message}` 
+      };
+    }
+  }
+
+  /**
+   * 优化数据库性能
+   */
+  async optimizeDatabase(): Promise<DatabaseResult<boolean>> {
+    try {
+      // 执行VACUUM操作来优化数据库
+      await this.db.run(sql`VACUUM`);
+      
+      // 更新统计信息
+      await this.db.run(sql`ANALYZE`);
+      
+      return { success: true, data: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to optimize database: ${(error as Error).message}` 
       };
     }
   }

@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { detectClientType } from '../../middleware/auth/detector';
 import { extractAndValidateApiKeys } from '../../middleware/auth/extractor';
-import { throwError } from '../../middleware/error-handler';
+import { throwError } from '../../adapters/base/errors.js';
 import { ProductionLogger as Logger } from '../../utils/logger';
 import { MODEL_MAPPINGS } from '../../utils/constants';
 
@@ -19,6 +19,22 @@ function generateUUID(): string {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+/**
+ * 提取更稳健的 User-Agent 信息
+ */
+function extractUserAgent(c: Context): string {
+  const ua = c.req.header('user-agent');
+  if (ua && ua.trim().length > 0) return ua;
+  const secUA = c.req.header('sec-ch-ua');
+  const secPlat = c.req.header('sec-ch-ua-platform');
+  const secMobile = c.req.header('sec-ch-ua-mobile');
+  const parts: string[] = [];
+  if (secUA) parts.push(`sec-ch-ua=${secUA}`);
+  if (secPlat) parts.push(`platform=${secPlat}`);
+  if (secMobile) parts.push(`mobile=${secMobile}`);
+  return parts.length > 0 ? parts.join('; ') : 'unknown';
 }
 
 /**
@@ -331,7 +347,9 @@ async function handleStreamingMessages(
   geminiModel: string,
   geminiRequest: any,
   selectedKey: string,
-  logger: any
+  logger: any,
+  originalModel: string,
+  requestSize: number
 ) {
   // 添加思考配置 - 对于支持thinking的Gemini模型
   if (geminiModel.includes('2.5')) {
@@ -423,8 +441,101 @@ async function handleStreamingMessages(
   c.header('x-powered-by', 'gemini-code-api');
 
   const transformStream = createClaudeStreamTransformer(geminiModel, { emitPrelude: true });
-  
-  return new Response(response.body?.pipeThrough(transformStream), {
+
+  // 统计与记录：
+  const upstream = response.body!;
+  const [forTransform, forStats] = upstream.tee();
+  const transformed = forTransform.pipeThrough(transformStream);
+  const [clientStream, countingStream] = transformed.tee();
+
+  const decoder = new TextDecoder();
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let responseBytes = 0;
+
+  // 读取原始上游SSE统计usage
+  const statsPromise = (async () => {
+    let buffer = '';
+    const reader = forStats.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 1);
+            const t = line.trim();
+            if (!t || !t.startsWith('data: ')) continue;
+            const data = t.slice(6).trim();
+            if (!data || data === '[DONE]') continue;
+            try {
+              const obj = JSON.parse(data);
+              if (obj?.usageMetadata) {
+                if (typeof obj.usageMetadata.promptTokenCount === 'number') {
+                  promptTokens = obj.usageMetadata.promptTokenCount;
+                }
+                if (typeof obj.usageMetadata.candidatesTokenCount === 'number') {
+                  completionTokens = obj.usageMetadata.candidatesTokenCount;
+                }
+                // totalTokenCount 不直接使用，按需统计 input/output
+              }
+            } catch {}
+          }
+        }
+      }
+    } finally {
+      // no-op
+    }
+  })();
+
+  // 读取变换后下游流统计字节数
+  const countPromise = (async () => {
+    const reader = countingStream.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) responseBytes += value.byteLength;
+      }
+    } finally {
+      // no-op
+    }
+  })();
+
+  // 在后台等待统计完成后写入记录
+  try {
+    const { getGlobalLoadBalancer } = await import('../../services/balancer/index.js');
+    const loadBalancer = getGlobalLoadBalancer();
+    if (loadBalancer) {
+      const writePromise = (async () => {
+        await Promise.all([statsPromise, countPromise]);
+        await loadBalancer.recordUsage(
+          selectedKey,
+          originalModel || geminiModel,
+          promptTokens,
+          completionTokens,
+          {
+            originalModel: originalModel || geminiModel,
+            endpoint: '/v1/messages',
+            clientType: 'claude',
+            statusCode: 200,
+            responseTimeMs: 0,
+            clientIP: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '',
+            userAgent: extractUserAgent(c),
+            requestSize: requestSize || 0,
+            responseSize: responseBytes,
+            isStream: true,
+          }
+        );
+      })();
+      c.executionCtx?.waitUntil(writePromise);
+    }
+  } catch (_) {}
+
+  return new Response(clientStream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -517,8 +628,11 @@ export function createMessagesRoute(): Hono {
       const isStreaming = requestBody.stream === true;
       logger.info('Request type', { isStreaming });
 
-      // 映射Claude模型到Gemini模型
-      const geminiModel = MODEL_MAPPINGS[requestBody.model as keyof typeof MODEL_MAPPINGS] || 'gemini-2.5-flash';
+      // 验证模型是否支持
+      const geminiModel = MODEL_MAPPINGS[requestBody.model as keyof typeof MODEL_MAPPINGS];
+      if (!geminiModel) {
+        throwError.validation(`Model '${requestBody.model}' is not supported. Please use one of the supported models.`);
+      }
       logger.info('Model mapping', { claudeModel: requestBody.model, geminiModel });
 
       // 选择API密钥 - 确保安全访问
@@ -618,7 +732,8 @@ export function createMessagesRoute(): Hono {
 
       // 如果是流式请求，调用流式处理
       if (isStreaming) {
-        return await handleStreamingMessages(c, geminiModel, geminiRequest, selectedKey, logger);
+        const requestSize = new TextEncoder().encode(JSON.stringify(requestBody)).length;
+        return await handleStreamingMessages(c, geminiModel, geminiRequest, selectedKey, logger, requestBody.model, requestSize);
       }
       
       // 构建Gemini API URL
@@ -790,6 +905,34 @@ export function createMessagesRoute(): Hono {
           output_tokens: responseData.usageMetadata?.candidatesTokenCount || 0
         }
       };
+
+      // 记录使用情况（异步，不阻塞响应）
+      try {
+        const { getGlobalLoadBalancer } = await import('../../services/balancer/index.js');
+        const loadBalancer = getGlobalLoadBalancer();
+        if (loadBalancer) {
+          c.executionCtx?.waitUntil(loadBalancer.recordUsage(
+            selectedKey,
+            requestBody.model,
+            claudeResponse.usage.input_tokens || 0,
+            claudeResponse.usage.output_tokens || 0,
+            {
+              originalModel: requestBody.model,
+              endpoint: '/v1/messages',
+              clientType: detectionResult!.clientType,
+              statusCode: 200,
+              responseTimeMs: 0,
+              clientIP: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '',
+              userAgent: extractUserAgent(c),
+              requestSize: new TextEncoder().encode(JSON.stringify(requestBody)).length,
+              responseSize: new TextEncoder().encode(JSON.stringify(claudeResponse)).length,
+              isStream: false,
+            }
+          ));
+        }
+      } catch (_) {
+        // 忽略记录失败
+      }
 
       // 设置响应头
       c.header('Content-Type', 'application/json');

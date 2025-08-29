@@ -148,35 +148,101 @@ export class ApiKeyExtractor {
   // === 私有方法 ===
 
   private extractFromOpenAIHeaders(headers: Headers): ExtractionResult {
-    // OpenAI 使用 Authorization: Bearer
+    // OpenAI 使用 Authorization: Bearer，但也支持其他头部
+    const allApiKeys: string[] = [];
+    
+    // 1. 尝试 Authorization Bearer
     const authHeader = headers.get('authorization');
-    return this.extractFromHeader(authHeader, 'authorization', 'openai');
+    if (authHeader) {
+      const result = this.extractFromHeader(authHeader, 'authorization', 'openai');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 2. 尝试 x-api-key
+    const apiKeyHeader = headers.get('x-api-key');
+    if (apiKeyHeader) {
+      const result = this.extractFromHeader(apiKeyHeader, 'x-api-key', 'openai');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 3. 尝试 x-goog-api-key
+    const googleHeader = headers.get('x-goog-api-key');
+    if (googleHeader) {
+      const result = this.extractFromHeader(googleHeader, 'x-goog-api-key', 'openai');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 去重API密钥
+    const uniqueApiKeys = [...new Set(allApiKeys)];
+
+    if (uniqueApiKeys.length > 0) {
+      return {
+        apiKeys: uniqueApiKeys,
+        totalKeys: uniqueApiKeys.length,
+        source: 'openai_multiple_headers',
+        clientType: 'openai',
+        headerName: 'authorization',
+      };
+    }
+
+    // 如果没有找到任何API KEY
+    return {
+      apiKeys: [],
+      totalKeys: 0,
+      source: 'no_api_keys_found',
+      clientType: 'openai',
+      headerName: 'authorization',
+    };
   }
 
   private extractFromClaudeHeaders(headers: Headers): ExtractionResult {
-    // Claude 优先使用 x-api-key
+    // Claude 优先使用 x-api-key，但也支持其他头部
+    const allApiKeys: string[] = [];
+    
+    // 1. 尝试 x-api-key
     const apiKeyHeader = headers.get('x-api-key');
     if (apiKeyHeader) {
-      return this.extractFromHeader(apiKeyHeader, 'x-api-key', 'claude');
+      const result = this.extractFromHeader(apiKeyHeader, 'x-api-key', 'claude');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
     }
 
-    // 兼容性回退：如果没有 x-api-key，尝试其他头部
-    // 1. 尝试 Authorization Bearer 格式
+    // 2. 尝试 Authorization Bearer 格式
     const authHeader = headers.get('authorization');
     if (authHeader) {
       const result = this.extractFromHeader(authHeader, 'authorization', 'claude');
       if (result.totalKeys > 0) {
-        return result;
+        allApiKeys.push(...result.apiKeys);
       }
     }
 
-    // 2. 尝试 x-goog-api-key（Gemini格式）
+    // 3. 尝试 x-goog-api-key（Gemini格式）
     const googleHeader = headers.get('x-goog-api-key');
     if (googleHeader) {
       const result = this.extractFromHeader(googleHeader, 'x-goog-api-key', 'claude');
       if (result.totalKeys > 0) {
-        return result;
+        allApiKeys.push(...result.apiKeys);
       }
+    }
+
+    // 去重API密钥
+    const uniqueApiKeys = [...new Set(allApiKeys)];
+
+    if (uniqueApiKeys.length > 0) {
+      return {
+        apiKeys: uniqueApiKeys,
+        totalKeys: uniqueApiKeys.length,
+        source: 'claude_multiple_headers',
+        clientType: 'claude',
+        headerName: 'x-api-key',
+      };
     }
 
     // 如果都没有找到，返回空结果但保持 claude 客户端类型
@@ -190,11 +256,47 @@ export class ApiKeyExtractor {
   }
 
   private extractFromGeminiHeaders(headers: Headers): ExtractionResult {
-    // Gemini 使用 x-goog-api-key
-    const googleHeader = headers.get('x-goog-api-key');
+    // Gemini 使用 x-goog-api-key，但也支持其他头部
+    const allApiKeys: string[] = [];
     
+    // 1. 尝试 x-goog-api-key
+    const googleHeader = headers.get('x-goog-api-key');
     if (googleHeader) {
-      return this.extractFromHeader(googleHeader, 'x-goog-api-key', 'gemini');
+      const result = this.extractFromHeader(googleHeader, 'x-goog-api-key', 'gemini');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 2. 尝试 Authorization Bearer 格式
+    const authHeader = headers.get('authorization');
+    if (authHeader) {
+      const result = this.extractFromHeader(authHeader, 'authorization', 'gemini');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 3. 尝试 x-api-key
+    const apiKeyHeader = headers.get('x-api-key');
+    if (apiKeyHeader) {
+      const result = this.extractFromHeader(apiKeyHeader, 'x-api-key', 'gemini');
+      if (result.totalKeys > 0) {
+        allApiKeys.push(...result.apiKeys);
+      }
+    }
+
+    // 去重API密钥
+    const uniqueApiKeys = [...new Set(allApiKeys)];
+
+    if (uniqueApiKeys.length > 0) {
+      return {
+        apiKeys: uniqueApiKeys,
+        totalKeys: uniqueApiKeys.length,
+        source: 'gemini_multiple_headers',
+        clientType: 'gemini',
+        headerName: 'x-goog-api-key',
+      };
     }
 
     // 回退到通用提取
@@ -202,21 +304,45 @@ export class ApiKeyExtractor {
   }
 
   private extractFromAnyHeaders(headers: Headers): ExtractionResult {
-    // 按优先级尝试不同的头
+    // 按优先级尝试不同的头，并合并所有找到的API密钥
     const headerPriority = [
       { name: 'x-goog-api-key', clientType: 'gemini' as ClientType },
       { name: 'authorization', clientType: 'openai' as ClientType },
       { name: 'x-api-key', clientType: 'claude' as ClientType },
     ];
 
+    const allApiKeys: string[] = [];
+    let primaryClientType: ClientType = 'unknown';
+    let primaryHeaderName = 'none';
+
     for (const { name, clientType } of headerPriority) {
       const headerValue = headers.get(name);
       if (headerValue) {
         const result = this.extractFromHeader(headerValue, name, clientType);
         if (result.totalKeys > 0) {
-          return result;
+          // 合并API密钥
+          allApiKeys.push(...result.apiKeys);
+          
+          // 记录第一个找到的客户端类型作为主要类型
+          if (primaryClientType === 'unknown') {
+            primaryClientType = result.clientType;
+            primaryHeaderName = result.headerName;
+          }
         }
       }
+    }
+
+    // 去重API密钥
+    const uniqueApiKeys = [...new Set(allApiKeys)];
+
+    if (uniqueApiKeys.length > 0) {
+      return {
+        apiKeys: uniqueApiKeys,
+        totalKeys: uniqueApiKeys.length,
+        source: `multiple_headers_merged`,
+        clientType: primaryClientType,
+        headerName: primaryHeaderName,
+      };
     }
 
     // 如果没有找到任何API KEY
