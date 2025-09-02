@@ -1,52 +1,32 @@
 {
   "name": "gemini-code-api",
-  "version": "2.0.0",
-  "description": "高性能多协议AI网关服务，支持OpenAI、Claude与Gemini API的统一访问接口",
+  "version": "1.0.0",
+  "description": "Refactored Gemini Code API",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "src/main.ts",
   "scripts": {
-    "build": "tsc",
-    "deploy": "npm run build && wrangler deploy",
-    "deploy:force": "npm run build && wrangler deploy --force",
-    "logs": "wrangler tail",
+    "build": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "type-check": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:create": "wrangler d1 create gemini-code",
-    "db:migrate": "wrangler d1 migrations apply gemini-code --remote",
-    "db:migrate:local": "wrangler d1 migrations apply gemini-code --local",
-    "db:reset": "wrangler d1 execute gemini-code --command='DROP TABLE IF EXISTS request_logs; DROP TABLE IF EXISTS api_key_metrics; DROP TABLE IF EXISTS system_stats; DROP TABLE IF EXISTS error_logs;' && npm run db:migrate",
-    "db:backup": "wrangler d1 export gemini-code --output backup-$(date +%Y%m%d-%H%M%S).sql",
-    "db:restore": "wrangler d1 execute gemini-code --file",
-    "examples": "node examples/run.js",
-    "examples:gemini": "node examples/run.js gemini",
-    "examples:claude": "node examples/run.js claude"
+    "deploy": "npm run build && wrangler deploy"
   },
   "keywords": [
     "gemini",
     "openai",
     "claude",
-    "api-gateway",
-    "cloudflare-workers",
-    "proxy",
-    "load-balancer"
+    "gateway"
   ],
-  "author": "Gemini Code API Team",
+  "author": "Gemini Code",
   "license": "MIT",
   "dependencies": {
-    "drizzle-orm": "^0.33.0",
     "hono": "^4.9.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
     "@types/node": "^22.0.0",
-    "drizzle-kit": "^0.24.0",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.0",
-    "typescript-transform-paths": "^3.5.5",
     "vitest": "^2.0.0",
     "wrangler": "^4.31.0"
   },

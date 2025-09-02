@@ -2,15 +2,13 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "allowJs": true,
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
     "declaration": false,
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,
@@ -20,21 +18,17 @@
     "paths": {},
     "types": [
       "@cloudflare/workers-types",
-      "vitest/globals",
-      "node"
+      "vitest/globals"
     ],
-    "lib": ["ES2022"]
+    "lib": ["ES2022", "WebWorker"],
+    "noEmit": true
   },
   "include": [
-    "src/**/*",
-    "tests/**/*"
-  ],
+    "src/**/*"
+, "tests/logic/transformers/claude.test.ts", "tests/logic/transformers/openai.test.ts"  ],
   "exclude": [
     "node_modules",
     "dist",
-    "**/*.test.ts"
-  ],
-  "ts-node": {
-    "esm": true
-  }
+    "tests"
+  ]
 }

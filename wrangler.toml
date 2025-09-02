@@ -1,16 +1,18 @@
 name = "gemini-code-api"
-main = "src/index.ts"
-compatibility_date = "2024-12-01"
+main = "src/main.ts"
+compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# 绑定到 Cloudflare D1 数据库
 [[d1_databases]]
 binding = "DB"
 database_name = "gemini-code"
-database_id = "41573a29-12ff-44ad-a507-34d43b5f5b77"
+database_id = "e36333e7-629b-4173-aec1-168e643579eb"
 
+# 绑定到 Cloudflare KV 存储
 [[kv_namespaces]]
 binding = "KV"
-id = "a6fd337e794548529e3d2cde1782a671"
+id = "5c2510245b56468096f3711861e86d81"
 
 [build]
 command = "npm run build"
