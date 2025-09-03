@@ -1,0 +1,49 @@
+{
+  "timestamp": "2025-09-02T10:10:33.712Z",
+  "example": "gemini-多工具调用",
+  "request": {
+    "model": "gemini-2.5-flash",
+    "testType": "多工具调用",
+    "hasFunctionCalls": true
+  },
+  "response": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "functionCall": {
+                "name": "get_weather",
+                "args": {
+                  "location": "New York, NY"
+                }
+              },
+              "thoughtSignature": "CvQDAVSoXO4ZNi+HeDGgTyjpqs4Xdhc33CufKH6RUJRjw/kkM4+5/UvYvwPwk6qj0WuTdP17OTqwfr4S+F7h7JVhPf3eiez9PmWdPcuhdFrdzFQHqC5o8lAXEk5N5JR5ZnznBmtWRNvBK3lSRWWEDkGwuhMcjg1ZJyrX3O3utN103RPe1klRjvj4PO+neBPBUOHiGl9lh8v4SDnOfgcsfLDhe6Pjon5YzGqYhZ14gmJZbpeEUiZabX/sikgN1/AtZOJ0Vzby6Mp5+iIJZNeDCr+e+HQkcgCzViPLWtjHK/N5qkDeiisGYx4tx1NFAHunjbzTXpr/nroYcvIAISb9GR+gncBVfDXCThFMaj4o1Xqb37FZBi10CfaJhJ0Fxel6otaYcGqVzd1Myt/cv9K3XPN8ELLof2rfn/wcKwakeUAmf+xPbq9lbxfkgivo7JbBVY1+am0jOoiV2Y4OeI9t5UzjICXOAQt9EymrYeGSODqhWe2rRu9Zrc+fZMX9guH2XT+SRk+jKEZSDlQ8RmZmw2UbbFvGF8lGO0PmlKCLiIgxJWmJMq+RxDMscDRSL6jY2Ehm/urIlpYcPINmWBcT4UDDWsPUipkbHuNFr+a/RQJS+qh98UFwjnmDl88XLxvH9KViex3beMFuOeXFxKp03eKmxNQJ7kY="
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 128,
+      "candidatesTokenCount": 18,
+      "totalTokenCount": 258,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 128
+        }
+      ],
+      "thoughtsTokenCount": 112
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "l8K2aNTPLujiqtsPkqTq6Qg"
+  },
+  "metadata": {
+    "responseSize": 1104,
+    "hasError": false
+  }
+}

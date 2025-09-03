@@ -1,6 +1,8 @@
 // src/logic/transformers/openai.ts
 import { getGeminiModel } from '../../config/models';
 import { ITransformer } from './base';
+import { ErrorTransformer } from './error';
+import { Multimodal } from '../processors/multimodal';
 
 export class OpenAITransformer implements ITransformer {
   transformRequest(data: any): { model: string; body: any; isStreaming: boolean; } {
@@ -9,10 +11,27 @@ export class OpenAITransformer implements ITransformer {
     const geminiRequest: any = {
       contents: data.messages
         .filter((message: any) => message.role !== 'system')
-        .map((message: any) => ({
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: message.content || '' }],
-        })),
+        .map((message: any) => {
+          const role = message.role === 'assistant' ? 'model' : 'user';
+          
+          // Handle multimodal content
+          let parts: any[];
+          if (typeof message.content === 'string') {
+            parts = [{ text: message.content }];
+          } else if (Array.isArray(message.content)) {
+            try {
+              parts = Multimodal.processOpenAIContent(message.content);
+            } catch (error: any) {
+              // Fallback to text-only processing if image processing fails
+              console.warn('Image processing failed, falling back to text-only:', error.message);
+              parts = [{ text: message.content.map((item: any) => item.text || '').join('') }];
+            }
+          } else {
+            parts = [{ text: message.content || '' }];
+          }
+          
+          return { role, parts };
+        }),
       generationConfig: {
         maxOutputTokens: data.max_tokens || 4096,
         temperature: data.temperature || 0.7,
@@ -38,20 +57,28 @@ export class OpenAITransformer implements ITransformer {
       }];
 
       // Handle tool choice
-      if (data.tool_choice === 'none') {
-        geminiRequest.toolConfig = {
-          functionCallingConfig: { mode: 'NONE' }
-        };
-      } else if (data.tool_choice === 'required' || data.tool_choice === 'auto') {
-        geminiRequest.toolConfig = {
-          functionCallingConfig: { mode: 'AUTO' }
-        };
-      } else if (typeof data.tool_choice === 'object' && data.tool_choice?.function?.name) {
+      if (typeof data.tool_choice === 'object' && data.tool_choice?.function?.name) {
+        // Force a specific tool to be called
         geminiRequest.toolConfig = {
           functionCallingConfig: {
             mode: 'ANY',
             allowedFunctionNames: [data.tool_choice.function.name]
           }
+        };
+      } else if (data.tool_choice === 'required') {
+        // Force any tool to be called
+        geminiRequest.toolConfig = {
+          functionCallingConfig: { mode: 'ANY' }
+        };
+      } else if (data.tool_choice === 'none') {
+        // Disable tool calling
+        geminiRequest.toolConfig = {
+          functionCallingConfig: { mode: 'NONE' }
+        };
+      } else { // Includes 'auto' and undefined/null
+        // Default to auto tool selection
+        geminiRequest.toolConfig = {
+          functionCallingConfig: { mode: 'AUTO' }
         };
       }
     }
@@ -64,67 +91,48 @@ export class OpenAITransformer implements ITransformer {
   }
 
   async transformResponse(geminiResponse: any, originalRequest: any): Promise<Response> {
-    if (originalRequest.stream) {
-      if (!geminiResponse.body) {
-        throw new Error('Streaming response has no body');
-      }
-      const transformedStream = this.createOpenAIStreamTransformer(geminiResponse.body, originalRequest.model);
-      return new Response(transformedStream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      });
-    }
-
-    const responseData = await geminiResponse.json();
-    if (!geminiResponse.ok) {
-      throw new Error(`Gemini API Error: ${responseData.error?.message}`);
-    }
-
-    const candidate = responseData.candidates?.[0];
-    if (!candidate) {
-      throw new Error('No candidate found in Gemini response');
-    }
-
-    // Check for function calls
-    const functionCalls = candidate.content?.parts?.filter((part: any) => part.functionCall) || [];
-    
-    let message: any = {
-      role: 'assistant',
-      content: null,
-    };
-
-    let finishReason = 'stop';
-
-    if (functionCalls.length > 0) {
-      // Handle tool calls
-      finishReason = 'tool_calls';
-      
-      // Add any text content
-      const textParts = candidate.content?.parts?.filter((part: any) => part.text && !part.functionCall) || [];
-      if (textParts.length > 0) {
-        message.content = textParts.map((part: any) => part.text).join('');
-      }
-
-      // Add tool calls
-      message.tool_calls = functionCalls.map((part: any, index: number) => ({
-        id: `call_${Date.now()}_${index}`,
-        type: 'function',
-        function: {
-          name: part.functionCall.name,
-          arguments: JSON.stringify(part.functionCall.args || {})
+    try {
+      if (originalRequest.stream) {
+        if (!geminiResponse.body) {
+          throw new Error('Streaming response has no body');
         }
-      }));
-    } else {
-      // Regular text response
-      message.content = candidate.content?.parts?.[0]?.text || '';
+        const transformedStream = this.createOpenAIStreamTransformer(geminiResponse.body, originalRequest.model);
+        return new Response(transformedStream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      const responseData = await geminiResponse.json();
+      if (!geminiResponse.ok) {
+        const geminiError = ErrorTransformer.parseGeminiError({ error: responseData.error });
+        return ErrorTransformer.createErrorResponse(geminiError, 'openai', originalRequest.model);
+      }
+
+      const candidate = responseData.candidates?.[0];
+      if (!candidate) {
+        const error = { code: 'NO_CANDIDATES', message: 'No candidate found in Gemini response' };
+        return ErrorTransformer.createErrorResponse(error, 'openai', originalRequest.model);
+      }
+
+      // Extract text content (simplified for basic chat only)
+      const textParts = candidate.content?.parts?.filter((part: any) => part.text) || [];
+      const content = textParts.map((part: any) => part.text).join('') || '';
       
+      let finishReason = 'stop';
       if (candidate.finishReason === 'MAX_TOKENS') {
         finishReason = 'length';
+      } else if (candidate.finishReason === 'SAFETY') {
+        finishReason = 'content_filter';
       }
-    }
+
+      const message = {
+        role: 'assistant',
+        content: content,
+      };
 
     const openaiResponse = {
       id: 'chatcmpl-' + Date.now(),
@@ -146,7 +154,11 @@ export class OpenAITransformer implements ITransformer {
     return new Response(JSON.stringify(openaiResponse), {
       headers: { 'Content-Type': 'application/json' },
     });
+  } catch (error: any) {
+    const geminiError = { code: 'TRANSFORM_ERROR', message: error.message || 'Response transformation failed' };
+    return ErrorTransformer.createErrorResponse(geminiError, 'openai', originalRequest.model);
   }
+}
 
   private createOpenAIStreamTransformer(geminiStream: ReadableStream, model: string): ReadableStream {
     const id = `chatcmpl-${Date.now()}`;

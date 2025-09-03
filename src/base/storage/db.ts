@@ -29,23 +29,23 @@ export class DbStorage {
     };
   }
 
-  async recordUsage(data: { keyHash: string, model: string, inputTokens: number, outputTokens: number, totalTokens: number, statusCode: number }): Promise<void> {
+  async recordUsage(data: { keyHash: string, model: string, inputTokens: number, outputTokens: number, totalTokens: number, statusCode: number, requestId?: string }): Promise<void> {
     const query = `
       INSERT INTO request_logs (id, timestamp, api_key_hash, model, input_tokens, output_tokens, total_tokens, status_code)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const id = crypto.randomUUID();
-    const timestamp = Math.floor(Date.now() / 1000);
+    const id = data.requestId || crypto.randomUUID();
+    const timestamp = Date.now(); // Use milliseconds for better precision
     
     await this.db.prepare(query).bind(
       id,
       timestamp,
       data.keyHash,
       data.model,
-      data.inputTokens,
-      data.outputTokens,
-      data.totalTokens,
-      data.statusCode
+      data.inputTokens || 0,
+      data.outputTokens || 0,
+      data.totalTokens || 0,
+      data.statusCode || 200
     ).run();
   }
 }

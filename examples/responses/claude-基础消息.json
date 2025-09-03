@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-09-02T12:50:39.191Z",
+  "example": "claude-基础消息",
+  "request": {
+    "model": "claude-sonnet-4-20250514",
+    "testType": "基础消息"
+  },
+  "response": {
+    "id": "msg_1756817437944",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "你好！很高兴介绍一下我自己。\n\n我是一个**大型语言模型**，由 **Google 训练**。\n\n我的主要任务是：\n*   **回答你的问题**\n*   **提供信息**\n*   **生成各种文本内容**（比如文章、摘要、创意写作、代码等等）\n*   **协助你完成各种语言相关的任务**\n\n简单来说，我在这里是为了帮助你，如果你有任何问题或需要帮助，随时可以告诉我！"
+      }
+    ],
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 9,
+      "output_tokens": 100
+    }
+  },
+  "metadata": {
+    "responseSize": 401,
+    "hasError": false
+  }
+}

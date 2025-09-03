@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-09-02T12:52:50.852Z",
+  "example": "claude-工具使用",
+  "request": {
+    "hasToolUse": true,
+    "toolUse": {
+      "type": "tool_use",
+      "id": "toolu_1756817569107_0",
+      "name": "get_weather",
+      "input": {
+        "location": "San Francisco, CA"
+      }
+    }
+  },
+  "response": {
+    "id": "msg_1756817569107",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_1756817569107_0",
+        "name": "get_weather",
+        "input": {
+          "location": "San Francisco, CA"
+        }
+      }
+    ],
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 99,
+      "output_tokens": 18
+    }
+  },
+  "metadata": {
+    "responseSize": 292,
+    "hasError": false
+  }
+}

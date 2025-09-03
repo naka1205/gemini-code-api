@@ -1,64 +1,86 @@
 /**
  * Claude 流式响应示例
- * 展示实时流式对话功能
+ * 演示如何处理流式响应事件 (带详细日志)
  */
 
-const { makeClaudeRequest, saveResponse, withPerformanceMonitoring, delay, Logger } = require('../utils');
+const { makeClaudeRequest, withPerformanceMonitoring, Logger } = require('../utils');
 const { config } = require('../config');
 
-const logger = new Logger('claude-streaming');
+const logger = new Logger('Claude-Streaming-Debug');
 
 /**
- * 基础流式对话
+ * 流式响应测试 (带详细日志)
  */
-async function testBasicStreaming() {
-  logger.info('开始测试基础流式对话');
-  
+async function testStreamingDebug() {
+  logger.info('开始流式响应测试 (Debug Mode)', { model: config.models.claude.default });
+
   try {
-    const model = config.models.claude.default;
-    const messages = [{
+    const messages = [{ 
       role: 'user',
-      content: '请用流式方式讲述一个关于人工智能发展的故事，每句话都要停顿一下。'
+      content: '请写一首关于星空的短诗。'
     }];
 
-    const response = await makeClaudeRequest(model, messages, {
+    const response = await makeClaudeRequest(config.models.claude.default, messages, {
+      max_tokens: 1024,
+      temperature: 0.7,
       stream: true,
-      max_tokens: 1000,
-      temperature: 0.7
     });
 
-    logger.info('流式响应开始');
-    let fullResponse = '';
-    let chunkCount = 0;
+    if (!response.body) {
+      throw new Error('响应中没有 body');
+    }
 
-    // 处理流式响应
+    let fullText = '';
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    console.log('\n🌌 流式响应原始事件:');
+    console.log('─'.repeat(50));
 
-        const chunk = decoder.decode(value);
-        process.stdout.write(chunk);
-        fullResponse += chunk;
-        chunkCount++;
-        
-        // 模拟实时效果
-        await delay(50);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        logger.info('读取流结束');
+        break;
       }
-    } finally {
-      reader.releaseLock();
-    }
+      const chunk = decoder.decode(value);
+      
+      // 打印原始数据块
+      logger.debug('接收到原始数据块:', chunk);
 
-    logger.info(`流式响应完成，共接收 ${chunkCount} 个数据块`);
-    await saveResponse('claude-流式响应', { response: fullResponse, chunkCount }, {
-      model,
-      testType: '流式响应'
-    });
+      const lines = chunk.split('\n\n');
+
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        
+        console.log(`[RAW EVENT]: ${line}\n`); // 打印每个原始事件
+
+        if (line.startsWith('data: ')) {
+          const data = line.substring(6);
+          try {
+            const parsed = JSON.parse(data);
+            
+            // 打印解析后的JSON对象
+            logger.info('解析事件成功:', parsed);
+
+            if (parsed.type === 'content_block_delta' && parsed.delta.type === 'text_delta') {
+              const text = parsed.delta.text;
+              process.stdout.write(text);
+              fullText += text;
+            } else if (parsed.type === 'message_stop') {
+              logger.info('接收到 message_stop 事件');
+            }
+          } catch (e) {
+            logger.error('JSON 解析失败:', { data, error: e.message });
+          }
+        }
+      }
+    }
     
-    return { success: true, chunkCount, responseLength: fullResponse.length };
+    console.log('\n' + '─'.repeat(50));
+    logger.success('流式响应测试完成', { responseLength: fullText.length });
+    return { success: true, responseLength: fullText.length };
+
   } catch (error) {
     logger.error('流式响应测试失败:', error);
     return { success: false, error: error.message };
@@ -69,23 +91,10 @@ async function testBasicStreaming() {
  * 主函数
  */
 async function main() {
-  logger.info('🚀 开始运行 Claude 流式响应示例');
-  
-  const result = await withPerformanceMonitoring(testBasicStreaming, '流式响应')();
-  
-  // 输出测试结果
-  console.log('\n📊 测试结果:');
-  console.log('─'.repeat(50));
-  const status = result.success ? '✅' : '❌';
-  const message = result.success ? 
-    `${result.chunkCount || 'N/A'} chunks, ${result.responseLength || 'N/A'} chars` : 
-    result.error;
-  console.log(`${status} 流式响应: ${result.success ? '成功' : '失败'} - ${message}`);
-
-  return result;
+  logger.info('🚀 开始运行 Claude 流式响应 (Debug) 示例');
+  await withPerformanceMonitoring(testStreamingDebug, '流式响应 (Debug)')();
 }
 
-// 如果直接运行此文件
 if (require.main === module) {
   main().catch(error => {
     logger.error('示例运行失败:', error);
@@ -94,6 +103,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  testBasicStreaming,
+  testStreamingDebug,
   main
 };

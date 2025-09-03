@@ -1,0 +1,58 @@
+{
+  "timestamp": "2025-09-02T10:10:40.803Z",
+  "example": "gemini-强制工具使用",
+  "request": {
+    "model": "gemini-2.5-flash",
+    "testType": "强制工具使用",
+    "hasFunctionCalls": true
+  },
+  "response": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "functionCall": {
+                "name": "record_summary",
+                "args": {
+                  "description": "Artificial intelligence offers numerous benefits in healthcare, revolutionizing various aspects from diagnosis to treatment and patient management.",
+                  "key_points": [
+                    "Improved diagnostic accuracy and speed",
+                    "Personalized treatment plans",
+                    "Enhanced drug discovery and development",
+                    "Automated administrative tasks, reducing burden on healthcare professionals",
+                    "Predictive analytics for disease outbreaks and patient deterioration",
+                    "Remote patient monitoring and virtual care",
+                    "Optimized resource allocation and operational efficiency"
+                  ]
+                }
+              },
+              "thoughtSignature": "CsQCAVSoXO6U4xev+5T+/kMeNCfZ9i13MNogbKg3D1ylAHIJtVRbR+zCoTd1kKFPAAfHDvAUyNPQbq2URy7L+KPlKv33SRTyyW27WNVJf3Mz8eajTwXAPCfNSwK+RAS67RTprG0uXPSTv2Md95ARVKNkaegZzDU0qlF+4FXZHRbnS0sF80qr+/s6N+Vi3rSxfcmp+YZR7Et8ZgjywohNtPpti2hoUO30aVbRooNVlfip9uxP8bGQ3SnUmF0+N9mSKJmRCeQZ8XTv6mO+NYDkbmBqegxxk8SVumq5E2oOTXDr2CRb+UVmWINVioxOlyitfjV2RBpfV7ss34ZbuDXNxIug/kjGf3EqupwKYLS/YfWP/mhpnrQMUPDCu/GfWlGWWa0A+4wQCz01Ui/lFJc+v4hgEvMkIxePGyHHbcJx1NGu8MAE80zI"
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 77,
+      "candidatesTokenCount": 97,
+      "totalTokenCount": 233,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 77
+        }
+      ],
+      "thoughtsTokenCount": 59
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "nsK2aJiXBdvVz7IPwNGt2Qs"
+  },
+  "metadata": {
+    "responseSize": 1388,
+    "hasError": false
+  }
+}

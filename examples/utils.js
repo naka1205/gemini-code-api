@@ -49,7 +49,6 @@ async function makeRequest(endpoint, options = {}) {
       }
       
       if (returnRawResponse) {
-        // 流式等场景：直接返回原始 Response，由调用方处理 response.body
         return response;
       }
 
@@ -61,9 +60,8 @@ async function makeRequest(endpoint, options = {}) {
         result = await response.text();
       }
       
-      // 优化：请求成功后添加延迟，避免过快消耗配额
-      if (attempt === 1) { // 只在第一次成功请求后添加延迟
-        const delayTime = Math.floor(Math.random() * 2000) + 1000; // 1-3秒随机延迟
+      if (attempt === 1) {
+        const delayTime = Math.floor(Math.random() * 2000) + 1000;
         console.log(`⏳ 请求成功，等待 ${delayTime}ms 后继续...`);
         await new Promise(resolve => setTimeout(resolve, delayTime));
       }
@@ -73,7 +71,7 @@ async function makeRequest(endpoint, options = {}) {
       lastError = error;
       console.warn(`⚠️  请求失败 (尝试 ${attempt}/${retries}): ${error.message}`);
       if (attempt < retries) {
-        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000; // 指数退避 + 随机延迟
+        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
         console.log(`⏳ 等待 ${Math.round(delay)}ms 后重试...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -91,19 +89,15 @@ async function makeGeminiRequest(model, contents, options = {}) {
     tools = [],
     safetySettings = [],
     stream = false,
-    // 顶层便捷参数（自动合并到 generationConfig）
     temperature,
     maxOutputTokens,
     topP,
     topK,
     stopSequences,
-    // 可选思考控制（默认禁用思考对外输出）
-    thinking, // { type: 'enabled'|'disabled', budget_tokens?: number }
+    thinking,
   } = options;
 
-  // 归一化与合并 generationConfig
   const mergedGenConfig = { ...generationConfig };
-  // 默认提升输出上限，降低 MAX_TOKENS 概率
   if (mergedGenConfig.maxOutputTokens === undefined) mergedGenConfig.maxOutputTokens = 2048;
   if (temperature !== undefined) mergedGenConfig.temperature = temperature;
   if (maxOutputTokens !== undefined) mergedGenConfig.maxOutputTokens = maxOutputTokens;
@@ -112,7 +106,6 @@ async function makeGeminiRequest(model, contents, options = {}) {
   if (stopSequences && Array.isArray(stopSequences) && stopSequences.length > 0) {
     mergedGenConfig.stopSequences = stopSequences;
   }
-  // 思考输出：默认禁用，仅显式启用时打开
   if (thinking && thinking.type === 'enabled') {
     const budget = Math.max(256, Math.min(Number(thinking.budget_tokens || 1024), Math.floor((mergedGenConfig.maxOutputTokens || 1024) * 0.5)));
     mergedGenConfig.thinkingConfig = { includeThoughts: true, thinkingBudget: budget };
@@ -137,7 +130,7 @@ async function makeGeminiRequest(model, contents, options = {}) {
 }
 
 /**
- * 发送 Claude API 请求（经统一网关适配，使用同一 KEY 头注入）
+ * 发送 Claude API 请求
  */
 async function makeClaudeRequest(model, messages, options = {}) {
   const {
@@ -166,7 +159,6 @@ async function makeClaudeRequest(model, messages, options = {}) {
     body.tools = tools;
     body.tool_choice = tool_choice;
   }
-  // 可选：当启用thinking时，自动给出稳健预算（不改写内容）
   if (thinking && thinking.type === 'enabled') {
     const budget = Math.min(1024, Math.floor(max_tokens / 3));
     body.thinking = { type: 'enabled', budget_tokens: Math.max(256, budget) };
@@ -180,8 +172,44 @@ async function makeClaudeRequest(model, messages, options = {}) {
     body,
     headers: {
       'Content-Type': 'application/json',
-      // 对于Claude请求，使用x-api-key头部
     },
+    returnRawResponse: stream, // Pass stream flag to return raw response
+  });
+}
+
+/**
+ * 发送 OpenAI API 请求
+ */
+async function makeOpenAIRequest(model, messages, options = {}) {
+  const {
+    max_tokens = 1024,
+    temperature = 0.7,
+    stream = false,
+    tools = [],
+    tool_choice = 'auto',
+  } = options;
+
+  const body = {
+    model,
+    messages,
+    max_tokens,
+    temperature,
+    stream,
+  };
+
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = tool_choice;
+  }
+
+  const endpoint = 'v1/chat/completions';
+  return makeRequest(endpoint, {
+    method: 'POST',
+    body,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    returnRawResponse: stream, // Pass stream flag to return raw response
   });
 }
 
@@ -191,7 +219,6 @@ async function makeClaudeRequest(model, messages, options = {}) {
 async function saveResponse(exampleName, response, request = null) {
   if (!config.test.saveResponses) return;
   try {
-    // 使用固定文件名，不包含时间戳，保持最新一份
     const filename = `${exampleName}.json`;
     const filepath = path.join(config.test.responseDir, filename);
     await fs.mkdir(config.test.responseDir, { recursive: true });
@@ -236,7 +263,6 @@ async function readTestImage(imageName) {
       return { data: buf.toString('base64'), mimeType: getMime(path.extname(name)) };
     } catch {}
   }
-  // 回退：优先选择体积较大的真实图片（>=10KB）
   const files = await fs.readdir(config.paths.images);
   const candidates = files.filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f));
   if (candidates.length === 0) {
@@ -245,7 +271,6 @@ async function readTestImage(imageName) {
   let chosen = candidates
     .map((f) => ({ name: f }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  // 选择满足大小阈值的第一张
   for (const c of chosen) {
     const p = path.join(config.paths.images, c.name);
     try {
@@ -257,7 +282,6 @@ async function readTestImage(imageName) {
       }
     } catch {}
   }
-  // 都过小则使用第一张
   const fallback = candidates[0];
   const fallbackPath = path.join(config.paths.images, fallback);
   const imageBuffer = await fs.readFile(fallbackPath);
@@ -266,7 +290,6 @@ async function readTestImage(imageName) {
 }
 
 async function readTwoTestImages(name1, name2) {
-  // 优先读取指定两张；失败则从目录挑选两张不同图片
   const listImages = async () => {
     const files = await fs.readdir(config.paths.images);
     return files.filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f));
@@ -301,7 +324,6 @@ async function readTwoTestImages(name1, name2) {
   if (candidates.length < 2) {
     throw new Error(`目录 ${config.paths.images} 需至少包含两张图片用于比较`);
   }
-  // 优先选择两个≥10KB的不同文件
   let large = [];
   for (const f of candidates) {
     try {
@@ -416,10 +438,8 @@ module.exports = {
   makeRequest,
   makeGeminiRequest,
   makeClaudeRequest,
+  makeOpenAIRequest,
   saveResponse,
-  /**
-   * 保存 Base64 图片到磁盘，便于预览
-   */
   saveBase64Image: async (fileName, base64Data) => {
     try {
       const outDir = path.join(config.paths.responses, 'images');

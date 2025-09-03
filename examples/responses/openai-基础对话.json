@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-09-02T12:39:11.800Z",
+  "example": "openai-基础对话",
+  "request": {
+    "model": "gpt-4",
+    "testType": "基础对话"
+  },
+  "response": {
+    "id": "chatcmpl-1756816749148",
+    "object": "chat.completion",
+    "created": 1756816749,
+    "model": "gpt-4",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "你好！很高兴能介绍一下我自己。\n\n**我是谁？**\n我是一个大型语言模型，由 Google 训练。我的设计初衷是理解和生成人类语言，旨在成为一个有用的助手，能够处理各种各样的文本任务和提供信息。\n\n**我能做什么？**\n\n我的主要能力"
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 19,
+      "completion_tokens": 67,
+      "total_tokens": 1041
+    }
+  },
+  "metadata": {
+    "responseSize": 384,
+    "hasError": false
+  }
+}

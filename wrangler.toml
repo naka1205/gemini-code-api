@@ -7,12 +7,12 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "gemini-code"
-database_id = "e36333e7-629b-4173-aec1-168e643579eb"
+database_id = "d70af52a-dc4c-4826-9fdf-fa43dba1a261"
 
 # 绑定到 Cloudflare KV 存储
 [[kv_namespaces]]
 binding = "KV"
-id = "5c2510245b56468096f3711861e86d81"
+id = "a6fd337e794548529e3d2cde1782a671"
 
 [build]
 command = "npm run build"

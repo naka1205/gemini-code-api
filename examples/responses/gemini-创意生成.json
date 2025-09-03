@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-09-02T12:55:57.407Z",
+  "example": "gemini-创意生成",
+  "request": {
+    "model": "gemini-2.5-flash",
+    "testType": "创意生成"
+  },
+  "response": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "text": "好的，基于这张图片，我将为您创作：\n\n---\n\n### 1. 短篇故事：守护之光\n\nAlex轻触屏幕，那个闪烁的绿色头像，头戴安全帽，是他，也是无数奋斗者的缩影。今天，它标记着新社区图书馆的施工现场——一块曾经荒芜的土地，即将被知识和文化的光芒点亮。\n\n对Alex而言，这不仅仅是一个项目。他记得父亲，一位老建筑师，总是说：“每一个建筑，都是凝固的梦想。” Alex继承了这份信念，并将其融入到现代科技中。这个绿色的图标，是他每日工作的指南，也是他对项目安全的承诺。\n\n清晨，Alex巡视工地，目光扫过那些忙碌的身影，他们如同屏幕上一个个移动的绿色光点，精确而有序。他确保脚手架稳固，安全帽佩戴正确，每一个细节都不放过。绿色的光芒，不仅仅是数字地图上的一个标记，更是他心中对责任与希望的具象化。蓝色的基座象征着稳固的基础，而那箭头则指向每一个精确的施工点，确保着从图纸到现实的完美转化。\n\n每当看到这个图标，Alex便充满了力量。它不仅仅是数字地图上的一个点，更是他梦想与汗水的具象化，预示着一个充满希望的未来，即将拔地而起。\n\n---\n\n### 2. 诗歌：绿心之基\n\n绿光一点，安全帽高悬，\n是建设者无声的誓言。\n在数字的版图上，它巍然矗立，\n标记着汗水与梦想的起源"
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "MAX_TOKENS",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 326,
+      "candidatesTokenCount": 356,
+      "totalTokenCount": 2372,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 68
+        },
+        {
+          "modality": "IMAGE",
+          "tokenCount": 258
+        }
+      ],
+      "thoughtsTokenCount": 1690
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "W-m2aLq0Nobpz7IPlLvs-A4"
+  },
+  "metadata": {
+    "responseSize": 949,
+    "hasError": false
+  }
+}

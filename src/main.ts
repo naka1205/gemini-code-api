@@ -87,9 +87,16 @@ app.use('*', async (c, next) => {
   const balancerStrategy = new SmartBalancerStrategy(quotaService, blacklistService);
   container.register('balancerService', () => new BalancerService(balancerStrategy));
   
-  // Cache Service with configuration
+  // Cache Service with enhanced multi-level configuration
   const cacheConfig = getCacheConfig();
-  container.register('cacheService', () => new CacheService(cacheConfig.maxSize));
+  const enhancedCacheConfig = {
+    maxSize: cacheConfig.maxSize || 1000,
+    defaultTTL: 300000, // 5 minutes
+    memoryLimitMB: 50,
+    l1Size: Math.floor((cacheConfig.maxSize || 1000) * 0.1), // 10% for L1 (hot)
+    l2Size: Math.floor((cacheConfig.maxSize || 1000) * 0.9)  // 90% for L2 (warm)
+  };
+  container.register('cacheService', () => new CacheService(enhancedCacheConfig));
 
   // Logic Layer - Transformers
   container.register('openaiTransformer', () => new OpenAITransformer());

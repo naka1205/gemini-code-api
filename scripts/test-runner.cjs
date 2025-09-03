@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const OpenAICompatTester = require('./test-openai.js');
-const ClaudeCompatTester = require('./test-claude.js');
-const GeminiNativeTester = require('./test-gemini.js');
+const OpenAICompatTester = require('./test-openai.cjs');
+const ClaudeCompatTester = require('./test-claude.cjs');
+const GeminiNativeTester = require('./test-gemini.cjs');
 
 class GatewayTesterRunner {
   constructor() {

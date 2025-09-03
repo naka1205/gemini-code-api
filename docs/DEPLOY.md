@@ -1,4 +1,4 @@
-# Gemini Code - Cloudflare Workers 部署指南
+# 部署指南
 
 ## 项目概述
 这是一个多协议AI API网关，使用Gemini作为统一后端，对外提供OpenAI、Claude、Gemini三种AI客户端API的兼容接口。

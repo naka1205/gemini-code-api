@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-09-02T12:31:47.221Z",
+  "example": "claude-多工具调用",
+  "request": null,
+  "response": {
+    "id": "msg_1756816306364",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_1756816306364_0",
+        "name": "get_weather",
+        "input": {
+          "location": "New York, NY"
+        }
+      },
+      {
+        "type": "tool_use",
+        "id": "toolu_1756816306364_1",
+        "name": "search_restaurants",
+        "input": {
+          "cuisine": "Italian",
+          "location": "New York, NY"
+        }
+      }
+    ],
+    "model": "claude-sonnet-4-20250514",
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 128,
+      "output_tokens": 41
+    }
+  },
+  "metadata": {
+    "responseSize": 421,
+    "hasError": false
+  }
+}

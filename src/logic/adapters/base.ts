@@ -2,7 +2,7 @@
 // src/logic/adapters/base.adapter.ts
 import { HttpClient } from '../../base/http/client';
 import { BalancerService } from '../services/balancer';
-import { CacheService } from '../services/cache';
+import { EnhancedCacheService } from '../services/cache';
 import { DbStorage } from '../../base/storage/db';
 import { hashApiKey } from '../../common/utils';
 import { ITransformer } from '../transformers/base';
@@ -14,7 +14,7 @@ export abstract class BaseAdapter {
   constructor(
     protected httpClient: HttpClient,
     protected balancer: BalancerService,
-    protected cache: CacheService,
+    protected cache: EnhancedCacheService,
     dbStorage: DbStorage,
     transformer: ITransformer,
   ) {

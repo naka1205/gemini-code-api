@@ -1,0 +1,49 @@
+{
+  "timestamp": "2025-09-02T10:10:26.858Z",
+  "example": "gemini-计算器",
+  "request": {
+    "model": "gemini-2.5-flash",
+    "testType": "计算器",
+    "hasFunctionCalls": true
+  },
+  "response": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "functionCall": {
+                "name": "calculate",
+                "args": {
+                  "expression": "15 * 23 + 7"
+                }
+              },
+              "thoughtSignature": "CvUBAVSoXO4UEsAQ5HBqs3BPxcBxO+kGF88xoKyPuwtB9v7MwOstW/ra5hMN18AT7n6zQ51GvxODc+LPGzGsGxBN41qh58VgNkY80UbMHkqz/mH/xERYm6HCQoG0VBYLumUyohGYDWG46wsMVO09GloZjwj0q8FUnWYfnAr0m4FJ8jzNkfqalE6bji+d5tnGACEzZnMiUGC9wt7YtRleqHzhdlHiZiNrhqV9gLamntHTljfkDsROthU0JvBJ/5NYHj1qAKrLDOq6627XPuxI3ndy/DC8THECAqvNVq8ybLdFrL01ynQuJSTcn+OrbQeg15nFsKW1bWs="
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 49,
+      "candidatesTokenCount": 21,
+      "totalTokenCount": 123,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 49
+        }
+      ],
+      "thoughtsTokenCount": 53
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "kcK2aNzHLYzjqtsP4uGHoAw"
+  },
+  "metadata": {
+    "responseSize": 760,
+    "hasError": false
+  }
+}
