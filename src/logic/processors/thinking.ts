@@ -33,15 +33,16 @@ export class ThinkingProcessor {
    * 转换Claude思考配置到Gemini格式
    */
   static convertThinkingConfig(thinking?: ThinkingConfig, maxTokens?: number, supportsThinking: boolean = false): GeminiThinkingConfig | undefined {
-    if (!thinking || !supportsThinking) {
+    if (!supportsThinking) {
       return undefined;
     }
 
-    if (thinking.type === 'disabled') {
+    if (thinking && thinking.type === 'disabled') {
+      // 原版逻辑：明确禁用thinking以避免Gemini为thinking预留token
       return { includeThoughts: false };
     }
 
-    if (thinking.type === 'enabled') {
+    if (thinking && thinking.type === 'enabled') {
       const thinkingBudget = this.calculateThinkingBudget(thinking.budget_tokens, maxTokens);
       return {
         includeThoughts: true,
@@ -49,7 +50,9 @@ export class ThinkingProcessor {
       };
     }
 
-    return undefined;
+    // 当没有明确指定thinking配置时，对于支持thinking的模型默认禁用
+    // 这与Claude的默认行为一致
+    return { includeThoughts: false };
   }
 
   /**

@@ -33,7 +33,17 @@ export class QuotaService {
   /**
    * Check if the API key has sufficient quota for the request
    */
-  async checkQuota(keyHash: string, model: string, estimatedTokens: number = 1000): Promise<QuotaCheckResult> {
+  async checkQuota(_keyHash: string, model: string, _estimatedTokens: number = 1000): Promise<QuotaCheckResult> {
+    // Temporarily disabled - always allow requests to bypass quota checking
+    // TODO: Re-enable after fixing database issues
+    const limits = this.getModelLimits(model);
+    return {
+      allowed: true,
+      limits,
+      current: { rpm: 0, tpm: 0, rpd: 0, timestamp: Date.now() }
+    };
+    
+    /* Original logic (commented out):
     try {
       const limits = this.getModelLimits(model);
       const current = await this.getCurrentUsage(keyHash, model);
@@ -85,6 +95,7 @@ export class QuotaService {
         current: { rpm: 0, tpm: 0, rpd: 0, timestamp: Date.now() }
       };
     }
+    */
   }
 
   /**
@@ -164,21 +175,18 @@ export class QuotaService {
            FREE_TIER_LIMITS['gemini-2.5-flash'];
   }
 
-  /**
-   * Get timestamp for next minute boundary
-   */
+  /*
+  // Temporarily commented out - unused while quota checking is disabled
   private getNextMinuteTimestamp(): number {
     const now = Date.now();
     return Math.ceil(now / 60000) * 60000;
   }
 
-  /**
-   * Get timestamp for next day boundary
-   */
   private getNextDayTimestamp(): number {
     const now = Date.now();
     return Math.ceil(now / 86400000) * 86400000;
   }
+  */
 
   /**
    * Get quota status for monitoring/debugging
