@@ -6,7 +6,7 @@ import { APP_INFO } from '../../common/constants';
 export function createHealthRoute(_container: Container): Hono {
   const app = new Hono();
 
-  app.get('/health', (c) => {
+  app.get('/', (c) => {
     return c.json({
       status: 'ok',
       timestamp: new Date().toISOString(),

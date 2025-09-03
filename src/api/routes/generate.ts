@@ -8,7 +8,7 @@ export function createGenerateRoute(container: Container): Hono {
   const app = new Hono();
 
   // 使用通配符匹配 Gemini API 的标准格式: /v1beta/models/{model}:generateContent
-  app.post('/v1beta/models/*', async (c: TypedContext) => {
+  app.post('/*', async (c: TypedContext) => {
     const path = c.req.path;
     const isStream = path.includes(':streamGenerateContent');
     const isGenerate = path.includes(':generateContent') || path.includes(':streamGenerateContent');

@@ -1,4 +1,4 @@
-// src/processors/multimodal.ts
+/// src/processors/multimodal.ts
 
 export interface ImageContent {
   mimeType: string;

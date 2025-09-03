@@ -115,8 +115,7 @@ app.use('*', async (c, next) => {
     container.get('httpClient'), 
     container.get('balancerService'), 
     container.get('cacheService'), 
-    dbStorage, 
-    container.get('claudeTransformer')
+    dbStorage
   ));
   container.register('geminiAdapter', () => new GeminiAdapter(
     container.get('httpClient'), 
@@ -133,11 +132,11 @@ app.use('*', async (c, next) => {
 // --- Route Registration ---
 const routes = new Hono();
 // Pass the container to the route creation functions
-routes.route('/', createChatRoute(container));
-routes.route('/', createMessagesRoute(container));
-routes.route('/', createGenerateRoute(container));
-routes.route('/', createEmbeddingsRoute(container));
-routes.route('/', createHealthRoute(container));
+routes.route('/v1/chat/completions', createChatRoute(container));
+routes.route('/v1/messages', createMessagesRoute(container));
+routes.route('/v1beta/models', createGenerateRoute(container));
+routes.route('/v1/embeddings', createEmbeddingsRoute(container));
+routes.route('/health', createHealthRoute(container));
 
 app.route('/', routes);
 

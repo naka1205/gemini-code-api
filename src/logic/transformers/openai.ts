@@ -160,44 +160,144 @@ export class OpenAITransformer implements ITransformer {
   }
 }
 
+  // Based on the working code from bak/adapters/openai/chat.ts
   private createOpenAIStreamTransformer(geminiStream: ReadableStream, model: string): ReadableStream {
     const id = `chatcmpl-${Date.now()}`;
     let buffer = '';
+    const MAX_BUFFER_SIZE = 1024 * 1024;
 
     const transformStream = new TransformStream({
       transform(chunk: Uint8Array, controller) {
-        const text = new TextDecoder().decode(chunk);
-        buffer += text;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.substring(6);
-            try {
-              const geminiChunk = JSON.parse(data);
-              if (geminiChunk.candidates?.[0]?.content?.parts?.[0]?.text) {
-                const openaiChunk = {
+        try {
+          const text = new TextDecoder().decode(chunk);
+          buffer += text;
+          
+          // Prevent buffer overflow
+          if (buffer.length > MAX_BUFFER_SIZE) {
+            buffer = buffer.substring(buffer.length - MAX_BUFFER_SIZE / 2);
+          }
+          
+          // Process line by line (original working approach)
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.substring(6);
+              
+              if (data === '[DONE]') {
+                const finalChunk = {
                   id,
                   object: 'chat.completion.chunk',
                   created: Math.floor(Date.now() / 1000),
                   model,
                   choices: [{
                     index: 0,
-                    delta: { content: geminiChunk.candidates[0].content.parts[0].text },
-                    finish_reason: geminiChunk.candidates[0].finishReason === 'STOP' ? 'stop' : null,
+                    delta: {},
+                    finish_reason: 'stop',
                   }],
                 };
-                controller.enqueue(`data: ${JSON.stringify(openaiChunk)}\n\n`);
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
+                controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+                return;
               }
-            } catch (e) {}
+              
+              try {
+                const parsed = JSON.parse(data);
+                
+                // Handle Gemini API errors
+                if (parsed.error) {
+                  const errorChunk = {
+                    id,
+                    object: 'chat.completion.chunk',
+                    created: Math.floor(Date.now() / 1000),
+                    model,
+                    error: {
+                      message: parsed.error.message || 'API request failed',
+                      type: parsed.error.code === 403 ? 'invalid_api_key' : 'api_error',
+                      code: parsed.error.code || null
+                    }
+                  };
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorChunk)}\n\n`));
+                  controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+                  return;
+                }
+                
+                // Process candidates (original working logic)
+                if (parsed.candidates && parsed.candidates.length > 0) {
+                  const candidate = parsed.candidates[0];
+                  
+                  // Handle content parts
+                  if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                    for (const part of candidate.content.parts) {
+                      if (part.text && part.text.length > 0) {
+                        const openaiChunk = {
+                          id,
+                          object: 'chat.completion.chunk',
+                          created: Math.floor(Date.now() / 1000),
+                          model,
+                          choices: [{
+                            index: 0,
+                            delta: { content: part.text },
+                            finish_reason: null,
+                          }],
+                        };
+                        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(openaiChunk)}\n\n`));
+                      }
+                    }
+                  }
+                  
+                  // Handle finish reason
+                  if (candidate.finishReason) {
+                    const finishReason = candidate.finishReason === 'MAX_TOKENS' ? 'length' : 
+                                       candidate.finishReason === 'SAFETY' ? 'content_filter' : 'stop';
+                    const finalChunk = {
+                      id,
+                      object: 'chat.completion.chunk',
+                      created: Math.floor(Date.now() / 1000),
+                      model,
+                      choices: [{
+                        index: 0,
+                        delta: {},
+                        finish_reason: finishReason,
+                      }],
+                    };
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
+                    controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+                    return;
+                  }
+                }
+              } catch (parseError) {
+                console.warn('Failed to parse Gemini streaming chunk in OpenAI transformer:', parseError);
+              }
+            }
           }
+        } catch (error) {
+          console.error('Error in OpenAI stream transform:', error);
         }
       },
       flush(controller) {
-        controller.enqueue('data: [DONE]\n\n');
+        try {
+          const finalChunk = {
+            id: id,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model,
+            choices: [{
+              index: 0,
+              delta: {},
+              finish_reason: 'stop',
+            }],
+          };
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        } catch (error) {
+          console.error('Error in OpenAI stream flush:', error);
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        }
       },
     });
 
-    return geminiStream.pipeThrough(transformStream).pipeThrough(new TextEncoderStream());
+    return geminiStream.pipeThrough(transformStream);
   }
 }

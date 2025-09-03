@@ -67,12 +67,47 @@ export abstract class BaseAdapter {
     const streamSuffix = request.isStreaming ? ':streamGenerateContent?alt=sse' : ':generateContent';
     const url = `${baseUrl}/${request.model}${streamSuffix}`;
 
-    return this.httpClient.post(url, request.body, {
-      headers: { 
-        'x-goog-api-key': apiKey,
-        'Content-Type': 'application/json'
-      }
-    });
+    // 按照BAK原版逻辑设置请求头
+    const headers: Record<string, string> = {
+      'x-goog-api-key': apiKey,
+      'Content-Type': 'application/json',
+      'User-Agent': 'gemini-code-api/2.0.0'
+    };
+
+    // 流式请求设置正确的Accept头
+    if (request.isStreaming) {
+      headers['Accept'] = 'text/event-stream';
+    }
+
+    const response = await this.httpClient.post(url, request.body, { headers });
+
+    // For streaming requests, check if the response failed
+    if (request.isStreaming && !response.ok) {
+      // Convert error response to a streaming format that transformers can handle
+      const errorData = await response.json().catch(() => ({ 
+        error: { 
+          code: response.status, 
+          message: response.statusText || 'API request failed' 
+        } 
+      }));
+      
+      // Create a ReadableStream that emits the error in SSE format
+      const errorStream = new ReadableStream({
+        start(controller) {
+          const errorChunk = `data: ${JSON.stringify(errorData)}\n\n`;
+          controller.enqueue(new TextEncoder().encode(errorChunk));
+          controller.close();
+        }
+      });
+
+      // Return a Response-like object with the error stream
+      return new Response(errorStream, {
+        status: 200, // Return 200 so transformers can process the error
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    return response;
   }
 
   protected async recordUsage(apiKey: string, model: string, response: Response): Promise<void> {
