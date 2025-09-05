@@ -5,12 +5,14 @@
  * 遵循"只做数据结构转换，不处理对话内容"的原则
  */
 
-import { ToolsProcessor } from './tools';
-
-export interface StreamingEvent {
-  type: string;
-  data: any;
-}
+import {
+  IProcessor,
+  ProcessContext,
+  ValidationResult,
+  IStreamProcessor,
+  StreamContext,
+  StreamEvent
+} from './types';
 
 export interface ContentBlock {
   type: 'thinking' | 'text' | 'tool_use';
@@ -21,7 +23,46 @@ export interface ContentBlock {
   input?: any;
 }
 
-export class StreamingProcessor {
+export class StreamingProcessor implements IProcessor<any, any>, IStreamProcessor {
+  /**
+   * 处理流式数据（IProcessor接口实现）
+   */
+  process(input: any, _context?: ProcessContext): any {
+    // 流式处理器主要用于创建转换器，这里返回输入数据
+    return input;
+  }
+
+  /**
+   * 验证流式数据格式（IProcessor接口实现）
+   */
+  validate(input: any): ValidationResult {
+    const errors: string[] = [];
+
+    if (!input) {
+      errors.push('Streaming input is required');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * 创建流式转换器（IStreamProcessor接口实现）
+   */
+  createTransformer(source: ReadableStream, context: StreamContext): ReadableStream {
+    return StreamingProcessor.createClaudeStreamTransformer(source, context.originalRequest);
+  }
+
+  /**
+   * 处理流式事件（IStreamProcessor接口实现）
+   */
+  processEvent(event: StreamEvent): StreamEvent[] {
+    // 返回单个事件，可以根据需要扩展
+    return [event];
+  }
+
   /**
    * 创建Claude流式转换器
    * 按照BAK原版逻辑实现
@@ -233,7 +274,7 @@ export class StreamingProcessor {
    */
   static processToolUseBlock(controller: TransformStreamDefaultController<Uint8Array>, index: number, functionCall: any): void {
     const encoder = new TextEncoder();
-    const toolUseId = ToolsProcessor.generateToolUseId();
+    const toolUseId = this.generateToolUseId();
     
     // 发送content_block_start事件
     const startEvent = {
@@ -347,5 +388,12 @@ export class StreamingProcessor {
       type: 'content_block_stop',
       index: index
     };
+  }
+
+  /**
+   * 生成工具使用ID
+   */
+  private static generateToolUseId(): string {
+    return `toolu_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
   }
 }

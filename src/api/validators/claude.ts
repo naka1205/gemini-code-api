@@ -1,187 +1,104 @@
-
-// src/api/validators/claude.validator.ts
-
-import { z } from 'zod';
-
-// Claude消息内容验证 - 支持完整的Claude内容类型
-const ClaudeContentSchema = z.union([
-  // 文本内容
-  z.object({
-    type: z.literal('text'),
-    text: z.string()
-  }),
-  // 图片内容
-  z.object({
-    type: z.literal('image'),
-    source: z.object({
-      type: z.enum(['base64', 'url']),
-      media_type: z.string(),
-      data: z.string()
-    })
-  }),
-  // 工具调用内容
-  z.object({
-    type: z.literal('tool_use'),
-    id: z.string(),
-    name: z.string(),
-    input: z.any()
-  }),
-  // 工具结果内容
-  z.object({
-    type: z.literal('tool_result'),
-    tool_use_id: z.string(),
-    content: z.union([z.string(), z.array(z.any())]).optional(),
-    is_error: z.boolean().optional()
-  }),
-  // 思考内容（扩展思考功能）
-  z.object({
-    type: z.literal('thinking'),
-    thinking: z.string()
-  })
-]);
-
-// Claude消息验证 - 支持字符串和数组两种格式
-const ClaudeMessageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.union([
-    z.string(), // 支持字符串格式
-    z.array(ClaudeContentSchema) // 支持数组格式
-  ])
-});
-
-// Claude思考配置验证
-const ClaudeThinkingConfigSchema = z.object({
-  type: z.enum(['enabled', 'disabled']),
-  budget_tokens: z.number().min(1).max(8192).optional()
-});
-
-// Claude工具定义验证
-const ClaudeToolSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  input_schema: z.any()
-});
-
-// Claude工具选择验证
-const ClaudeToolChoiceSchema = z.union([
-  z.literal('auto'),
-  z.literal('none'),
-  z.object({
-    type: z.literal('tool'),
-    name: z.string()
-  })
-]);
-
-// Claude请求验证
-export const ClaudeRequestSchema = z.object({
-  model: z.string(),
-  messages: z.array(ClaudeMessageSchema).min(1),
-  max_tokens: z.number().min(1).max(131072).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  top_k: z.number().min(1).max(40).optional(),
-  stream: z.boolean().optional(),
-  thinking: ClaudeThinkingConfigSchema.optional(),
-  tools: z.array(ClaudeToolSchema).optional(),
-  tool_choice: ClaudeToolChoiceSchema.optional()
-});
+// src/api/validators/claude.ts
+import { ValidationError } from '../../common/errors';
 
 export class ClaudeValidator {
-  /**
-   * 验证Claude请求
-   * 按照BAK原版逻辑实现
-   */
-  static async validate(request: Request): Promise<any> {
+  public static async validate(request: Request): Promise<any> {
+    const body = await this.parseBody(request);
+
+    // 核心字段验证
+    this.validateRequired(body.model, 'model');
+    this.validateRequired(body.messages, 'messages');
+    this.validateArray(body.messages, 'messages');
+    this.validateMessages(body.messages);
+
+    // 可选参数验证
+    if (body.max_tokens !== undefined) {
+      // 允许数字字符串，安全转换
+      const coerced = typeof body.max_tokens === 'string' ? Number(body.max_tokens) : body.max_tokens;
+      if (!Number.isFinite(coerced)) {
+        throw new ValidationError('Field "max_tokens" must be a number');
+      }
+      // 兼容处理：当 <= 0 时视为未提供，交由后续默认值处理
+      if (coerced <= 0) {
+        delete body.max_tokens;
+      } else {
+        this.validateNumberRange(coerced, 'max_tokens', 1, 8192);
+        body.max_tokens = coerced;
+      }
+    }
+    if (body.temperature !== undefined) {
+      this.validateNumberRange(body.temperature, 'temperature', 0, 1);
+    }
+    if (body.top_p !== undefined) {
+      this.validateNumberRange(body.top_p, 'top_p', 0, 1);
+    }
+    if (body.top_k !== undefined) {
+      this.validateNumberRange(body.top_k, 'top_k', 1, 1000);
+    }
+    if (body.stop_sequences !== undefined) {
+      this.validateArray(body.stop_sequences, 'stop_sequences');
+    }
+    if (body.tools) {
+      this.validateArray(body.tools, 'tools');
+    }
+    
+    // 验证成功后，返回完整的原始body
+    return body;
+  }
+
+  private static async parseBody(request: Request): Promise<any> {
     try {
-      const body: any = await request.json();
-      
-      // 添加调试日志来查看失败的消息
-      console.log('[CLAUDE VALIDATION DEBUG] Validating request with', body.messages?.length, 'messages');
-      if (body.messages && body.messages.length > 0) {
-        body.messages.forEach((msg: any, index: number) => {
-          console.log(`[CLAUDE VALIDATION DEBUG] Message ${index}:`, {
-            role: msg.role,
-            contentType: typeof msg.content,
-            contentIsArray: Array.isArray(msg.content),
-            contentPreview: Array.isArray(msg.content) 
-              ? msg.content.map((c: any) => ({ type: c.type, hasText: !!c.text, hasId: !!c.id, hasToolUseId: !!c.tool_use_id }))
-              : typeof msg.content === 'string' ? msg.content.substring(0, 100) + '...' : msg.content
-          });
-        });
-      }
-      
-      // 基础验证
-      const validatedData = ClaudeRequestSchema.parse(body);
-      
-      // 按照BAK原版逻辑进行额外验证
-      this.validateClaudeRequest(validatedData);
-      
-      return validatedData;
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-        console.log('[CLAUDE VALIDATION ERROR]', errorMessage);
-        console.log('[CLAUDE VALIDATION ERROR] Issues:', error.errors);
-        throw new Error(`Validation failed: ${errorMessage}`);
-      }
-      throw error;
+      return await request.json();
+    } catch (e) {
+      throw new ValidationError('Invalid JSON request body');
     }
   }
 
-  /**
-   * 按照BAK原版逻辑验证Claude请求
-   */
-  private static validateClaudeRequest(data: any): void {
-    // 验证必需字段
-    if (!data.model || !data.messages || !Array.isArray(data.messages)) {
-      throw new Error('Fields "model" and "messages" are required');
+  private static validateRequired(field: any, fieldName: string): void {
+    if (field === undefined || field === null) {
+      throw new ValidationError(`Field "${fieldName}" is required`);
+    }
+  }
+
+  private static validateArray(field: any, fieldName: string): void {
+    if (!Array.isArray(field)) {
+      throw new ValidationError(`Field "${fieldName}" must be an array`);
+    }
+  }
+
+  private static validateNumber(field: any, fieldName: string): void {
+    if (typeof field !== 'number') {
+      throw new ValidationError(`Field "${fieldName}" must be a number`);
+    }
+  }
+  
+  private static validateNumberRange(field: any, fieldName: string, min: number, max: number): void {
+    this.validateNumber(field, fieldName);
+    if (field < min || field > max) {
+      throw new ValidationError(`Field "${fieldName}" must be between ${min} and ${max}`);
+    }
+  }
+
+  private static validateMessages(messages: any[]): void {
+    if (messages.length === 0) {
+      throw new ValidationError('Field "messages" must not be empty');
     }
 
-    // 验证消息格式
-    if (data.messages.length === 0) {
-      throw new Error('At least one message is required');
-    }
+    let lastRole: string | null = null;
+    messages.forEach((message, index) => {
+      const fieldPath = `messages[${index}]`;
+      this.validateRequired(message.role, `${fieldPath}.role`);
+      this.validateRequired(message.content, `${fieldPath}.content`);
 
-    // 验证流式请求的max_tokens（流式请求时max_tokens是可选的）
-    if (!data.stream && !data.max_tokens) {
-      throw new Error('max_tokens is required for non-streaming requests');
-    }
-
-    // 验证思考配置
-    if (data.thinking) {
-      if (data.thinking.type === 'enabled' && data.thinking.budget_tokens) {
-        if (data.thinking.budget_tokens < 1 || data.thinking.budget_tokens > 8192) {
-          throw new Error('thinking.budget_tokens must be between 1 and 8192');
-        }
+      if (!['user', 'assistant'].includes(message.role)) {
+        throw new ValidationError(`Invalid role "${message.role}" in ${fieldPath}. Must be "user" or "assistant"`);
       }
-    }
 
-    // 验证工具配置
-    if (data.tools && data.tools.length > 0) {
-      if (data.tools.length > 128) {
-        throw new Error('Maximum 128 tools allowed');
+      if (index > 0 && message.role === lastRole) {
+        throw new ValidationError(`Messages must alternate between "user" and "assistant"`);
       }
-      
-      for (const tool of data.tools) {
-        if (!tool.name || typeof tool.name !== 'string') {
-          throw new Error('Tool name is required and must be a string');
-        }
-      }
-    }
 
-    // 验证工具选择
-    if (data.tool_choice && data.tool_choice !== 'auto' && data.tool_choice !== 'none') {
-      if (data.tool_choice.type === 'tool' && !data.tool_choice.name) {
-        throw new Error('Tool choice name is required when type is "tool"');
-      }
-    }
-
-    // 验证流式配置
-    if (data.stream === true) {
-      // 流式请求的特殊验证
-      if (data.max_tokens && (data.max_tokens < 1 || data.max_tokens > 131072)) {
-        throw new Error('max_tokens must be between 1 and 131072 for streaming requests');
-      }
-    }
+      lastRole = message.role;
+    });
   }
 }

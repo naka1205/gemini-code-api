@@ -6,10 +6,12 @@ import { EnhancedCacheService } from '../services/cache';
 import { DbStorage } from '../../base/storage/db';
 import { hashApiKey } from '../../common/utils';
 import { ITransformer } from '../transformers/base';
+import { getGlobalLogger } from '../../base/logging/logger';
 
 export abstract class BaseAdapter {
   protected dbStorage: DbStorage;
   protected transformer: ITransformer;
+  protected format: string = 'base';
 
   constructor(
     protected httpClient: HttpClient,
@@ -27,6 +29,31 @@ export abstract class BaseAdapter {
       const request = c.req.raw;
       const validatedData = await this.validate(request);
       const transformedRequest = this.transformer.transformRequest(validatedData);
+      
+      // 精简专用日志：仅记录客户端请求参数与转换后的Gemini参数
+      try {
+        const logger = getGlobalLogger();
+        const requestId = typeof c.get === 'function' ? c.get('requestId') : undefined;
+        const hasTools = Array.isArray(validatedData?.tools) && validatedData.tools.length > 0;
+        const toolChoice = validatedData?.tool_choice;
+        const allowedToolNames = (() => {
+          if (Array.isArray(validatedData?.tools)) {
+            return validatedData.tools.map((t: any) => t?.name).filter(Boolean);
+          }
+          return undefined;
+        })();
+
+        logger.info('Claude→Gemini 参数转换', {
+          requestId,
+          format: this.format,
+          model: validatedData?.model,
+          hasTools: hasTools || Boolean(toolChoice && toolChoice !== 'none'),
+          toolChoice: toolChoice || 'auto',
+          toolNames: allowedToolNames,
+          clientRequest: validatedData,
+          geminiRequest: transformedRequest?.body,
+        });
+      } catch {}
       
       const apiKey = await this.balancer.selectOptimalKey(
         apiKeys,
@@ -46,16 +73,15 @@ export abstract class BaseAdapter {
       }
 
       return response;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Adapter process error:', error);
-      return new Response(JSON.stringify({ 
-        error: { 
-          message: error instanceof Error ? error.message : 'Unknown error',
-          type: 'internal_error'
-        } 
-      }), { 
-        status: 500, 
-        headers: { 'Content-Type': 'application/json' } 
+      // 识别我们系统内的 AppError/ValidationError
+      const status = typeof error?.statusCode === 'number' ? error.statusCode : 500;
+      const type = typeof error?.code === 'string' ? error.code : 'internal_error';
+      const message = typeof error?.message === 'string' ? error.message : 'Unknown error';
+      return new Response(JSON.stringify({ error: { message, type } }), {
+        status,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
   }
